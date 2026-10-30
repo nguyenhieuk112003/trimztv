@@ -1,0 +1,24 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Portable tools & binaries (>100MB exceeds GitHub limit)
+tools/
+*.exe
+*.dll
+
+# Output media and generated files
+Output/
+*.mp4
+*.mp3
+*.wav
+*.mkv
+
+# Environments & editor files
+.env
+.venv
+env/
+venv/
+.idea/
+.vscode/
