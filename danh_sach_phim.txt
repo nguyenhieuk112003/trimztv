@@ -1,0 +1,13 @@
+# ==============================================================================
+# DANH SÁCH PHIM TRIMZ.TV CẦN TẢI TỰ ĐỘNG
+# ==============================================================================
+# - Mỗi dòng là 1 đường link đầy đủ hoặc tên slug của phim trên Trimz.tv.
+# - Dòng có dấu # ở đầu là dòng chú thích (bỏ qua).
+# - Con job sẽ đọc file này và tự động chia từng phim vào 1 thư mục riêng.
+#
+# Ví dụ:
+# https://trimz.tv/how-a-loner-otaku-bagged-the-most-popular-girl-at
+# https://trimz.tv/black-grade
+# https://trimz.tv/a-mermaids-first-love
+# ==============================================================================
+

@@ -1,0 +1,22 @@
+{
+  "check_interval_minutes": 30,
+  "crawl_homepage": true,
+  "custom_urls_file": "danh_sach_phim.txt",
+  "output_dir": "Downloads",
+  "delogo": {
+    "enabled": true,
+    "position": "top-right",
+    "custom_box": {
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
+    }
+  },
+  "merge": {
+    "enabled": true,
+    "max_duration_minutes": 40,
+    "output_folder": "Ghep_Video"
+  },
+  "max_episodes_per_show": 0
+}
