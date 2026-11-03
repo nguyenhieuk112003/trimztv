@@ -24,5 +24,72 @@
     "channel_3_vietnamese_recap": true,
     "gemini_api_key": ""
   },
+  "ai_recap": {
+    "enabled": true,
+    "api_key": "",
+    "model": "gemini-1.5-flash",
+    "languages": [
+      "vi",
+      "en"
+    ],
+    "voice_vi": "vi-VN-NamMinhNeural",
+    "voice_en": "en-US-ChristopherNeural",
+    "ducking_bgm_volume": 0.15,
+    "ducking_voice_volume": 1.25
+  },
+  "channels_distribution": {
+    "kenh_1_raw": {
+      "name": "Kenh_1_Phim_Goc_Full",
+      "youtube": {
+        "enabled": false,
+        "token_file": "tokens/yt_kenh1_raw.json",
+        "client_secrets_file": "client_secrets.json",
+        "privacy_status": "unlisted",
+        "category_id": "1"
+      },
+      "facebook": {
+        "enabled": false,
+        "page_id": "",
+        "access_token": ""
+      }
+    },
+    "kenh_2_en": {
+      "name": "Kenh_2_Review_Anime_EN",
+      "youtube": {
+        "enabled": false,
+        "token_file": "tokens/yt_kenh2_en.json",
+        "client_secrets_file": "client_secrets.json",
+        "privacy_status": "unlisted",
+        "category_id": "1"
+      },
+      "facebook": {
+        "enabled": false,
+        "page_id": "",
+        "access_token": ""
+      }
+    },
+    "kenh_3_vi": {
+      "name": "Kenh_3_Tom_Tat_Anime_VI",
+      "youtube": {
+        "enabled": false,
+        "token_file": "tokens/yt_kenh3_vi.json",
+        "client_secrets_file": "client_secrets.json",
+        "privacy_status": "unlisted",
+        "category_id": "1"
+      },
+      "facebook": {
+        "enabled": false,
+        "page_id": "",
+        "access_token": ""
+      }
+    }
+  },
+  "youtube_upload": {
+    "enabled": false,
+    "client_secrets_file": "client_secrets.json",
+    "token_file": "token.json",
+    "privacy_status": "unlisted",
+    "category_id": "1"
+  },
   "max_episodes_per_show": 0
 }

@@ -23,3 +23,8 @@ env/
 venv/
 .idea/
 .vscode/
+
+# OAuth secrets & tokens
+client_secrets*.json
+token*.json
+tokens/

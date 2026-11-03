@@ -20,6 +20,7 @@ import argparse
 import subprocess
 import urllib.request
 import urllib.error
+import html as html_lib
 from datetime import datetime
 
 # Đảm bảo console UTF-8 trên Windows
@@ -74,6 +75,23 @@ def load_config() -> dict:
             "max_duration_minutes": 40,
             "output_folder": "Ghep_Video"
         },
+        "ai_recap": {
+            "enabled": True,
+            "api_key": "",
+            "model": "gemini-1.5-flash",
+            "languages": ["vi", "en"],
+            "voice_vi": "vi-VN-NamMinhNeural",
+            "voice_en": "en-US-ChristopherNeural",
+            "ducking_bgm_volume": 0.15,
+            "ducking_voice_volume": 1.25
+        },
+        "youtube_upload": {
+            "enabled": False,
+            "client_secrets_file": "client_secrets.json",
+            "token_file": "token.json",
+            "privacy_status": "unlisted",
+            "category_id": "1"
+        },
         "max_episodes_per_show": 0
     }
     if os.path.isfile(CONFIG_FILE):
@@ -85,6 +103,12 @@ def load_config() -> dict:
                     default_config["delogo"].update(data["delogo"])
                 if "merge" in data and isinstance(data["merge"], dict):
                     default_config["merge"].update(data["merge"])
+                if "ai_recap" in data and isinstance(data["ai_recap"], dict):
+                    default_config["ai_recap"].update(data["ai_recap"])
+                if "youtube_upload" in data and isinstance(data["youtube_upload"], dict):
+                    default_config["youtube_upload"].update(data["youtube_upload"])
+                if "channels_distribution" in data and isinstance(data["channels_distribution"], dict):
+                    default_config["channels_distribution"] = data["channels_distribution"]
         except Exception as e:
             print(f"[!] Lỗi đọc file config.json: {e}. Dùng cấu hình mặc định.")
     else:
@@ -297,6 +321,14 @@ def extract_show_episodes(show_url: str):
     raw_title = raw_title.split(" - Trimz")[0].split(" | Trimz")[0].split(": Watch & Create")[0].replace("Watch ", "").strip()
     safe_title = sanitize_filename(raw_title)
 
+    # Lấy cốt truyện / mô tả phim
+    desc_match = re.search(r'<meta name="description" content="([^"]+)"', html)
+    if not desc_match:
+        desc_match = re.search(r'<meta property="og:description" content="([^"]+)"', html)
+    raw_desc = desc_match.group(1) if desc_match else ""
+    clean_desc = html_lib.unescape(raw_desc)
+    clean_desc = re.sub(r'Watch .*? on Trimz[ \t–—\-]*', '', clean_desc).strip()
+
     # Tìm các link MP4
     mp4_pattern = r'https://cdn\.trimz\.co/generated-videos/ms_videos/[a-zA-Z0-9_\-]+\.mp4'
     found_urls = re.findall(mp4_pattern, html)
@@ -312,6 +344,7 @@ def extract_show_episodes(show_url: str):
     return {
         "url": show_url,
         "title": safe_title,
+        "description": clean_desc,
         "episodes": unique_urls
     }
 
@@ -336,6 +369,18 @@ def process_single_show(show_url: str, config: dict, history: dict, ffmpeg_bin: 
     out_base = os.path.join(BASE_DIR, config.get("output_dir", "Downloads"))
     show_dir = os.path.join(out_base, info["title"])
     os.makedirs(show_dir, exist_ok=True)
+
+    # Lưu metadata của phim (tiêu đề, cốt truyện, URL) vào thư mục phim
+    info_file = os.path.join(show_dir, "info.json")
+    try:
+        with open(info_file, "w", encoding="utf-8") as f:
+            json.dump({
+                "title": info["title"],
+                "description": info.get("description", ""),
+                "url": show_url
+            }, f, indent=2, ensure_ascii=False)
+    except Exception:
+        pass
 
     delogo_cfg = config.get("delogo", {})
     delogo_enabled = delogo_cfg.get("enabled", True)
@@ -399,12 +444,12 @@ def process_single_show(show_url: str, config: dict, history: dict, ffmpeg_bin: 
     # Tự động ghép các tập video đã tải thành các video tối đa X phút (mặc định 40 phút)
     merge_cfg = config.get("merge", {})
     if merge_cfg.get("enabled", True):
-        merge_show_episodes(show_dir, info["title"], config, ffmpeg_bin)
+        merge_show_episodes(show_dir, info["title"], config, ffmpeg_bin, show_desc=info.get("description", ""))
 
     return new_downloaded
 
 
-def merge_show_episodes(show_dir: str, show_title: str, config: dict, ffmpeg_bin: str) -> int:
+def merge_show_episodes(show_dir: str, show_title: str, config: dict, ffmpeg_bin: str, show_desc: str = "") -> int:
     """
     Tự động ghép các tập video đã tải thành các video có thời lượng tối đa theo cấu hình (mặc định: 40 phút).
     - Tìm tất cả file Tap_XXX.mp4 trong show_dir.
@@ -412,6 +457,16 @@ def merge_show_episodes(show_dir: str, show_title: str, config: dict, ffmpeg_bin
     - Dùng FFmpeg ghép không làm giảm chất lượng (stream copy), có fallback re-encode nếu cần.
     - Lưu vào thư mục con (mặc định: Ghep_Video).
     """
+    if not show_desc:
+        info_file = os.path.join(show_dir, "info.json")
+        if os.path.isfile(info_file):
+            try:
+                with open(info_file, "r", encoding="utf-8") as f:
+                    idata = json.load(f)
+                    show_desc = idata.get("description", "")
+            except Exception:
+                pass
+
     merge_cfg = config.get("merge", {})
     if not merge_cfg.get("enabled", True):
         return 0
@@ -505,11 +560,58 @@ def merge_show_episodes(show_dir: str, show_title: str, config: dict, ffmpeg_bin
 
         print(f"\n   ▶ Part {part_idx:02d}/{len(groups):02d} (Tập {start_ep:03d} -> {end_ep:03d} | {len(g_eps)} tập | {dur_mins:.1f} phút):")
 
+        def trigger_channel_publishing(final_video_path: str, p_start: int, p_end: int, p_dur: float):
+            # 1. Tự động xuất bản Kênh 1 (Raw Full) nếu bật
+            dist_cfg = config.get("channels_distribution", {})
+            k1_cfg = dist_cfg.get("kenh_1_raw", {})
+            if k1_cfg.get("youtube", {}).get("enabled", False) or k1_cfg.get("facebook", {}).get("enabled", False):
+                raw_title = f"{show_title} - Tập {p_start:03d}-{p_end:03d} (Full 1080p)" if p_start != p_end else f"{show_title} - Tập {p_start:03d} (Full 1080p)"
+                raw_desc = f"Xem trọn bộ phim {show_title} (Tập {p_start} - {p_end}).\n\n{show_desc}\n\n#anime #{safe_title.lower().replace(' ', '')} #fullhd"
+                k1_meta = {
+                    "title": raw_title,
+                    "description": raw_desc,
+                    "tags": ["anime", "full hd", "phim anime", safe_title.lower()]
+                }
+                k1_payload = os.path.join(target_dir, f"{safe_title}_Part_{part_idx:02d}_RAW_PAYLOAD.json")
+                try:
+                    from publisher import publish_to_channel
+                    publish_to_channel("kenh_1_raw", final_video_path, k1_meta, config, payload_json_path=k1_payload)
+                except Exception as e_k1:
+                    print(f"      [!] Lỗi xuất bản Kênh 1: {e_k1}")
+
+            # 2. Xử lý kịch bản, lồng tiếng & xuất bản Kênh 2 (Review EN) và Kênh 3 (Review VI)
+            ai_cfg = config.get("ai_recap", {})
+            if not ai_cfg.get("enabled", True):
+                return
+            ai_cfg_copy = dict(ai_cfg)
+            ai_cfg_copy["full_config"] = config
+            try:
+                from ai_recap_helper import process_channel_review
+                for lang in ai_cfg.get("languages", ["vi", "en"]):
+                    sub_chan = "Kenh_3_Review_VI" if lang == "vi" else "Kenh_2_Review_EN"
+                    chan_dir = os.path.join(target_dir, sub_chan)
+                    process_channel_review(
+                        ffmpeg_bin=ffmpeg_bin,
+                        raw_merged_video=final_video_path,
+                        show_title=show_title,
+                        show_desc=show_desc,
+                        start_ep=p_start,
+                        end_ep=p_end,
+                        duration_mins=p_dur,
+                        lang=lang,
+                        out_folder=chan_dir,
+                        ai_cfg=ai_cfg_copy,
+                        yt_cfg=config.get("youtube_upload", {})
+                    )
+            except Exception as e_ai:
+                print(f"      [!] Lỗi khi xử lý AI Recap: {e_ai}")
+
         # Kiểm tra nếu file ghép đã tồn tại và mới hơn tất cả các tập nguồn
         if os.path.isfile(out_path) and os.path.getsize(out_path) > 102400:
             target_mtime = os.path.getmtime(out_path)
             if all(os.path.getmtime(e["path"]) < target_mtime for e in g_eps):
                 print(f"      [✓] Đã tồn tại & mới nhất: {out_name} ({os.path.getsize(out_path)/(1024*1024):.1f} MB)")
+                trigger_channel_publishing(out_path, start_ep, end_ep, dur_mins)
                 continue
 
         # Nếu chỉ có 1 tập trong nhóm: stream copy trực tiếp
@@ -521,6 +623,7 @@ def merge_show_episodes(show_dir: str, show_title: str, config: dict, ffmpeg_bin
                 if res.returncode == 0 and os.path.isfile(out_path) and os.path.getsize(out_path) > 102400:
                     print(f"      [✓] Hoàn thành: {out_name} ({os.path.getsize(out_path)/(1024*1024):.1f} MB)")
                     merged_count += 1
+                    trigger_channel_publishing(out_path, start_ep, end_ep, dur_mins)
                 else:
                     print(f"      [!] Lỗi sao chép video tập {start_ep}: {res.stderr[:160]}")
             except Exception as e:
@@ -550,6 +653,7 @@ def merge_show_episodes(show_dir: str, show_title: str, config: dict, ffmpeg_bin
             if res.returncode == 0 and os.path.isfile(out_path) and os.path.getsize(out_path) > 102400:
                 print(f"      [✓] Ghép thành công: {out_name} ({os.path.getsize(out_path)/(1024*1024):.1f} MB | {dur_mins:.1f} phút)")
                 merged_count += 1
+                trigger_channel_publishing(out_path, start_ep, end_ep, dur_mins)
             else:
                 # Cách 2: Fallback re-encode nếu video gốc có thông số lệch nhau
                 print(f"      [!] Concat copy không thành công, chuyển sang ghép & re-encode...")
@@ -577,6 +681,7 @@ def merge_show_episodes(show_dir: str, show_title: str, config: dict, ffmpeg_bin
                 if res_fb.returncode == 0 and os.path.isfile(out_path) and os.path.getsize(out_path) > 102400:
                     print(f"      [✓] Ghép re-encode thành công: {out_name} ({os.path.getsize(out_path)/(1024*1024):.1f} MB)")
                     merged_count += 1
+                    trigger_channel_publishing(out_path, start_ep, end_ep, dur_mins)
                 else:
                     print(f"      [X] Lỗi ghép video: {res_fb.stderr[:200]}")
         except Exception as ex:
@@ -675,6 +780,9 @@ def main():
     parser.add_argument("--interval", type=int, help="Ghi đè chu kỳ quét (tính bằng phút)")
     parser.add_argument("--no-delogo", action="store_true", help="Tắt tính năng xóa logo")
     parser.add_argument("--no-merge", action="store_true", help="Tắt tính năng tự động ghép video")
+    parser.add_argument("--no-ai", action="store_true", help="Tắt tính năng AI tự động viết kịch bản và lồng tiếng")
+    parser.add_argument("--upload-youtube", action="store_true", help="Tự động đăng video lên YouTube sau khi tạo xong")
+    parser.add_argument("--gemini-key", type=str, help="Cung cấp hoặc ghi đè Gemini API Key")
     parser.add_argument("--max-duration", type=int, help="Thời lượng tối đa cho mỗi video ghép (tính bằng phút, mặc định: 40)")
     parser.add_argument("--merge-only", action="store_true", help="Chỉ thực hiện ghép các video đã tải sẵn trong Downloads mà không tải mới")
     parser.add_argument("--url", type=str, help="Chỉ quét 1 URL phim cụ thể")
@@ -689,6 +797,12 @@ def main():
         config["delogo"]["enabled"] = False
     if args.no_merge:
         config["merge"]["enabled"] = False
+    if args.no_ai:
+        config["ai_recap"]["enabled"] = False
+    if args.upload_youtube:
+        config["youtube_upload"]["enabled"] = True
+    if args.gemini_key:
+        config["ai_recap"]["api_key"] = args.gemini_key
     if args.max_duration:
         config["merge"]["max_duration_minutes"] = max(1, args.max_duration)
 
@@ -698,12 +812,29 @@ def main():
     merge_max_dur = config.get("merge", {}).get("max_duration_minutes", 40)
     merge_folder = config.get("merge", {}).get("output_folder", "Ghep_Video")
 
+    ai_cfg = config.get("ai_recap", {})
+    ai_status = "BẬT" if ai_cfg.get("enabled", True) else "TẮT"
+    ai_model = ai_cfg.get("model", "gemini-1.5-flash")
+    ai_langs = ", ".join(ai_cfg.get("languages", ["vi", "en"]))
+
+    dist_cfg = config.get("channels_distribution", {})
+    k1_yt = "BẬT" if dist_cfg.get("kenh_1_raw", {}).get("youtube", {}).get("enabled", False) else "TẮT"
+    k1_fb = "BẬT" if dist_cfg.get("kenh_1_raw", {}).get("facebook", {}).get("enabled", False) else "TẮT"
+    k2_yt = "BẬT" if dist_cfg.get("kenh_2_en", {}).get("youtube", {}).get("enabled", False) else "TẮT"
+    k2_fb = "BẬT" if dist_cfg.get("kenh_2_en", {}).get("facebook", {}).get("enabled", False) else "TẮT"
+    k3_yt = "BẬT" if dist_cfg.get("kenh_3_vi", {}).get("youtube", {}).get("enabled", False) else "TẮT"
+    k3_fb = "BẬT" if dist_cfg.get("kenh_3_vi", {}).get("facebook", {}).get("enabled", False) else "TẮT"
+
     print("*" * 65)
     print("      TRIMZ.TV AUTO CRON JOB - TẢI, XÓA LOGO & GHÉP VIDEO      ")
     print("*" * 65)
     print(f"[*] FFmpeg Binary: {ffmpeg_bin}")
     print(f"[*] Chế độ xóa logo: {'BẬT (vị trí: ' + config['delogo']['position'] + ')' if config['delogo']['enabled'] else 'TẮT'}")
     print(f"[*] Chế độ ghép video: {merge_status} (Tối đa {merge_max_dur} phút/video -> '{merge_folder}')")
+    print(f"[*] Chế độ AI Review (Gemini + TTS): {ai_status} (Model: {ai_model} | Kênh: {ai_langs})")
+    print(f"[*] Phân phối Kênh 1 (Raw Phim): YouTube [{k1_yt}] | Facebook Page [{k1_fb}]")
+    print(f"[*] Phân phối Kênh 2 (Review EN): YouTube [{k2_yt}] | Facebook Page [{k2_fb}]")
+    print(f"[*] Phân phối Kênh 3 (Review VI): YouTube [{k3_yt}] | Facebook Page [{k3_fb}]")
     print(f"[*] Thư mục lưu: {config.get('output_dir', 'Downloads')}")
     print(f"[*] Chu kỳ kiểm tra: {config.get('check_interval_minutes', 30)} phút / lần")
     print("*" * 65)

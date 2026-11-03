@@ -128,19 +128,44 @@ def step2_generate_script(info: dict) -> str:
     summary = info.get("summary", "")
     ep_start = info["ep_start"]
     ep_end = info["ep_end"]
-    
-    # Mẫu kịch bản tóm tắt hấp dẫn theo phong cách Review Phim YouTube
-    script = (
-        f"Chào mừng các bạn đã quay trở lại với Góc Tóm Tắt Anime! "
-        f"Hôm nay, chúng ta sẽ cùng đến với câu chuyện vô cùng thú vị mang tên: {title}. "
-        f"Nếu như bạn nghĩ một chàng trai Otaku sống khép kín, ngày ngày chỉ biết cắm mặt vào thế giới ảo "
-        f"thì sẽ chẳng bao giờ có cơ hội chạm tay vào tình yêu, thì bộ anime này sẽ khiến bạn phải suy nghĩ lại hoàn toàn. "
-        f"Trong tập mở đầu hôm nay, hàng loạt biến cố bất ngờ đã xảy ra khi nữ thần xinh đẹp và nổi tiếng nhất toàn trường "
-        f"lại bất ngờ chú ý và xuất hiện trong cuộc đời của cậu ấy. "
-        f"Liệu đây là một sự trùng hợp định mệnh, hay đằng sau đó là một bí mật mà không ai hay biết? "
-        f"Không để các bạn phải chờ đợi lâu nữa, chúng ta hãy cùng theo dõi ngay diễn biến từ tập {ep_start} đến tập {ep_end} nhé! "
-        f"Đừng quên bấm Like và Đăng Ký Kênh để không bỏ lỡ những tập tiếp theo cực kỳ gay cấn!"
-    )
+
+    api_key = os.environ.get("GEMINI_API_KEY", "")
+    if not api_key:
+        try:
+            with open(os.path.join(BASE_DIR, "config.json"), "r", encoding="utf-8") as f:
+                cfg = json.load(f)
+                api_key = cfg.get("ai_recap", {}).get("api_key", "").strip()
+        except Exception:
+            pass
+
+    script = ""
+    if api_key:
+        print("[*] Đang gọi Gemini AI để tự động sáng tác kịch bản review chuẩn phong cách YouTube...")
+        try:
+            from ai_recap_helper import generate_recap_content
+            res = generate_recap_content(api_key, title, summary, ep_start, ep_end, duration_mins=10.0, language="vi")
+            script = res.get("narration", "").strip()
+            if res.get("youtube_title"):
+                info["ai_yt_title"] = res.get("youtube_title")
+                info["ai_yt_desc"] = res.get("youtube_description")
+                info["ai_yt_tags"] = res.get("youtube_tags")
+            print("[✓] Gemini đã viết kịch bản thành công!")
+        except Exception as e:
+            print(f"[!] Gọi Gemini lỗi ({e}), chuyển sang kịch bản mẫu dự phòng...")
+
+    if not script:
+        # Mẫu kịch bản tóm tắt hấp dẫn theo phong cách Review Phim YouTube
+        script = (
+            f"Chào mừng các bạn đã quay trở lại với Góc Tóm Tắt Anime! "
+            f"Hôm nay, chúng ta sẽ cùng đến với câu chuyện vô cùng thú vị mang tên: {title}. "
+            f"Nếu như bạn nghĩ một chàng trai Otaku sống khép kín, ngày ngày chỉ biết cắm mặt vào thế giới ảo "
+            f"thì sẽ chẳng bao giờ có cơ hội chạm tay vào tình yêu, thì bộ anime này sẽ khiến bạn phải suy nghĩ lại hoàn toàn. "
+            f"Trong tập mở đầu hôm nay, hàng loạt biến cố bất ngờ đã xảy ra khi nữ thần xinh đẹp và nổi tiếng nhất toàn trường "
+            f"lại bất ngờ chú ý và xuất hiện trong cuộc đời của cậu ấy. "
+            f"Liệu đây là một sự trùng hợp định mệnh, hay đằng sau đó là một bí mật mà không ai hay biết? "
+            f"Không để các bạn phải chờ đợi lâu nữa, chúng ta hãy cùng theo dõi ngay diễn biến từ tập {ep_start} đến tập {ep_end} nhé! "
+            f"Đừng quên bấm Like và Đăng Ký Kênh để không bỏ lỡ những tập tiếp theo cực kỳ gay cấn!"
+        )
     
     script_file = os.path.join(info["work_dir"], "kich_ban_review.txt")
     with open(script_file, "w", encoding="utf-8") as f:

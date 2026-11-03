@@ -57,12 +57,40 @@ Bạn có thể mở file `config.json` để tùy chỉnh thông số theo nhu 
     "max_duration_minutes": 40,
     "output_folder": "Ghep_Video"
   },
+  "ai_recap": {
+    "enabled": true,
+    "api_key": "YOUR_GEMINI_API_KEY",
+    "model": "gemini-1.5-flash",
+    "languages": ["vi", "en"],
+    "voice_vi": "vi-VN-NamMinhNeural",
+    "voice_en": "en-US-ChristopherNeural",
+    "ducking_bgm_volume": 0.15,
+    "ducking_voice_volume": 1.25
+  },
+  "youtube_upload": {
+    "enabled": false,
+    "client_secrets_file": "client_secrets.json",
+    "token_file": "token.json",
+    "privacy_status": "unlisted",
+    "category_id": "1"
+  },
   "max_episodes_per_show": 0
 }
 ```
 
 ### Giải thích các tham số:
-- `check_interval_minutes`: Thời gian nghỉ giữa các chu kỳ quét (tính bằng phút).
+- `check_interval_minutes`: Thời gian nghỉ giữa các chu kỳ quét (tính bằng phút, mặc định 30 phút).
+- `youtube_upload`:
+  - `enabled`: `true` để tự động đăng video lên YouTube ngay sau khi xử lý xong (mặc định: `false`).
+  - `privacy_status`: Chế độ đăng (`"unlisted"` - Không công khai để duyệt trước, `"private"` - Riêng tư, hoặc `"public"` - Công khai ngay).
+  - `category_id`: Mã danh mục YouTube (`"1"`: Film & Animation, `"24"`: Entertainment).
+  - `client_secrets_file`: File OAuth Client ID tải từ Google Cloud Console.
+- `ai_recap`:
+  - `enabled`: `true` để bật AI tự động viết kịch bản, lồng tiếng và Audio Ducking (xuất bản 3 kênh).
+  - `api_key`: Điền Gemini API Key của bạn tại đây (hoặc đặt biến môi trường `GEMINI_API_KEY`).
+  - `model`: Model Gemini sử dụng (`gemini-1.5-flash` - miễn phí, siêu nhanh).
+  - `languages`: Danh sách ngôn ngữ review cần tạo (`["vi", "en"]` cho Kênh 3 và Kênh 2).
+  - `voice_vi` / `voice_en`: Giọng đọc AI tự nhiên (Microsoft Neural Edge-TTS).
 - `crawl_homepage`: `true` nếu muốn tự động quét tất cả các phim mới xuất hiện trên trang chủ Trimz.tv.
 - `custom_urls_file`: Đường dẫn file chứa các link phim chỉ định (`danh_sach_phim.txt`).
 - `output_dir`: Tên thư mục gốc lưu các tập phim tải về (`Downloads`).
@@ -90,3 +118,8 @@ Bạn có thể mở file `config.json` để tùy chỉnh thông số theo nhu 
 - `Chay_Job_1_Lan.bat`: Phím tắt chạy quét 1 lần duy nhất.
 - `Ghep_Video_Da_Tai.bat`: Phím tắt quét và ghép các video đã tải trong máy thành các phần tối đa 40 phút.
 - `Chay_Job_Khong_Xoa_Logo.bat`: Phím tắt chạy tải video gốc tốc độ cao.
+
+- acebook_uploader.py: Module tự động tải video lên Facebook Fanpage qua Meta Graph API (Resumable Upload).
+- publisher.py: Bộ điều phối phân phối đa kênh & đa nền tảng (YouTube Channels & Facebook Pages).
+- Dang_Nhap_3_Kenh_YouTube.bat: Phím tắt 1-click đăng nhập xác thực 3 kênh YouTube độc lập.
+- Dang_Video_Len_Facebook.bat: Phím tắt hỗ trợ tải video lên Fanpage Facebook thủ công.
