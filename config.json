@@ -15,8 +15,14 @@
   },
   "merge": {
     "enabled": true,
-    "max_duration_minutes": 40,
-    "output_folder": "Ghep_Video"
+    "max_duration_minutes": 30,
+    "output_folder": "Ghep_Video_30Phut"
+  },
+  "channels": {
+    "channel_1_raw": true,
+    "channel_2_english_recap": true,
+    "channel_3_vietnamese_recap": true,
+    "gemini_api_key": ""
   },
   "max_episodes_per_show": 0
 }
