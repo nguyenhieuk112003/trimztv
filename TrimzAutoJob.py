@@ -33,6 +33,45 @@ CONFIG_FILE = os.path.join(BASE_DIR, "config.json")
 HISTORY_FILE = os.path.join(BASE_DIR, "history.json")
 DEFAULT_CUSTOM_FILE = os.path.join(BASE_DIR, "danh_sach_phim.txt")
 
+# Thư mục và file nhật ký hoạt động để truy vết (Tracing log)
+LOG_DIR = os.path.join(BASE_DIR, "logs")
+os.makedirs(LOG_DIR, exist_ok=True)
+LOG_FILE = os.path.join(LOG_DIR, "auto_job.log")
+
+def log_event(message: str, level: str = "INFO"):
+    """Ghi vết sự kiện có thời gian vào logs/auto_job.log để dễ truy vết."""
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    clean_msg = message.strip()
+    if clean_msg:
+        line = f"[{now_str}] [{level.upper():7s}] {clean_msg}\n"
+        try:
+            with open(LOG_FILE, "a", encoding="utf-8") as lf:
+                lf.write(line)
+        except Exception:
+            pass
+
+def cleanup_merged_source_episodes(episode_list: list, merged_video_name: str, config: dict):
+    """Tự động xóa các tập video ngắn nguồn sau khi đã ghép thành công vào video dài."""
+    if not config.get("cleanup_source_episodes", True):
+        return
+    freed_bytes = 0
+    deleted_count = 0
+    for ep in episode_list:
+        ep_path = ep.get("path")
+        if ep_path and os.path.isfile(ep_path):
+            try:
+                sz = os.path.getsize(ep_path)
+                os.remove(ep_path)
+                freed_bytes += sz
+                deleted_count += 1
+            except Exception as e_del:
+                log_event(f"Không thể xóa file ngắn {os.path.basename(ep_path)}: {e_del}", level="WARN")
+    if deleted_count > 0:
+        mb_freed = freed_bytes / (1024 * 1024)
+        msg_clean = f"🧹 [DỌN DẸP Ổ CỨNG] Đã tự động xóa {deleted_count} video ngắn nguồn ({mb_freed:.1f} MB) sau khi ghép thành công {merged_video_name}"
+        print(f"      {msg_clean}")
+        log_event(msg_clean, level="CLEAN")
+
 # Tìm công cụ FFmpeg khả dụng
 def get_ffmpeg_exe() -> str:
     # 1. Thư mục tools nội bộ
@@ -65,6 +104,7 @@ def load_config() -> dict:
         "crawl_homepage": True,
         "custom_urls_file": "danh_sach_phim.txt",
         "output_dir": "Downloads",
+        "cleanup_source_episodes": True,
         "delogo": {
             "enabled": True,
             "position": "top-right",
@@ -396,10 +436,11 @@ def process_single_show(show_url: str, config: dict, history: dict, ffmpeg_bin: 
         final_path = os.path.join(show_dir, filename)
 
         # Kiểm tra nếu tập này đã xử lý trước đó
-        if v_url in processed_set and os.path.isfile(final_path) and os.path.getsize(final_path) > 102400:
+        if v_url in processed_set:
             continue
 
         print(f"   ▶ Tập {idx:03d}/{len(episodes):03d} ({filename}):")
+        log_event(f"Bắt đầu tải: '{info['title']}' - Tập {idx:03d}/{len(episodes):03d} ({filename})", level="DOWNLOAD")
 
         # Trường hợp xóa logo: Tải file tạm -> Xử lý delogo -> Xuất file đích
         if delogo_enabled:
@@ -408,7 +449,9 @@ def process_single_show(show_url: str, config: dict, history: dict, ffmpeg_bin: 
                 download_file(v_url, temp_path)
                 success = apply_delogo(ffmpeg_bin, temp_path, final_path, delogo_cfg)
                 if success:
-                    print(f"      [✓] Hoàn thành & Đã xóa logo: {filename} ({os.path.getsize(final_path)/(1024*1024):.2f} MB)")
+                    sz_mb = os.path.getsize(final_path) / (1024 * 1024)
+                    print(f"      [✓] Hoàn thành & Đã xóa logo: {filename} ({sz_mb:.2f} MB)")
+                    log_event(f"Tải và xóa logo thành công: '{info['title']}' - {filename} ({sz_mb:.2f} MB)", level="SUCCESS")
                     history["processed_urls"].append(v_url)
                     processed_set.add(v_url)
                     save_history(history)
@@ -612,6 +655,8 @@ def merge_show_episodes(show_dir: str, show_title: str, config: dict, ffmpeg_bin
             if all(os.path.getmtime(e["path"]) < target_mtime for e in g_eps):
                 print(f"      [✓] Đã tồn tại & mới nhất: {out_name} ({os.path.getsize(out_path)/(1024*1024):.1f} MB)")
                 trigger_channel_publishing(out_path, start_ep, end_ep, dur_mins)
+                cleanup_merged_source_episodes(g_eps, out_name, config)
+                log_event(f"Ghép video thành công: {out_name} ({dur_mins:.1f} phút)", level="INFO")
                 continue
 
         # Nếu chỉ có 1 tập trong nhóm: stream copy trực tiếp
@@ -624,6 +669,8 @@ def merge_show_episodes(show_dir: str, show_title: str, config: dict, ffmpeg_bin
                     print(f"      [✓] Hoàn thành: {out_name} ({os.path.getsize(out_path)/(1024*1024):.1f} MB)")
                     merged_count += 1
                     trigger_channel_publishing(out_path, start_ep, end_ep, dur_mins)
+                    cleanup_merged_source_episodes(g_eps, out_name, config)
+                    log_event(f"Ghép video thành công: {out_name} ({dur_mins:.1f} phút)", level="INFO")
                 else:
                     print(f"      [!] Lỗi sao chép video tập {start_ep}: {res.stderr[:160]}")
             except Exception as e:
@@ -654,6 +701,8 @@ def merge_show_episodes(show_dir: str, show_title: str, config: dict, ffmpeg_bin
                 print(f"      [✓] Ghép thành công: {out_name} ({os.path.getsize(out_path)/(1024*1024):.1f} MB | {dur_mins:.1f} phút)")
                 merged_count += 1
                 trigger_channel_publishing(out_path, start_ep, end_ep, dur_mins)
+                cleanup_merged_source_episodes(g_eps, out_name, config)
+                log_event(f"Ghép video thành công: {out_name} ({dur_mins:.1f} phút)", level="INFO")
             else:
                 # Cách 2: Fallback re-encode nếu video gốc có thông số lệch nhau
                 print(f"      [!] Concat copy không thành công, chuyển sang ghép & re-encode...")
@@ -682,6 +731,8 @@ def merge_show_episodes(show_dir: str, show_title: str, config: dict, ffmpeg_bin
                     print(f"      [✓] Ghép re-encode thành công: {out_name} ({os.path.getsize(out_path)/(1024*1024):.1f} MB)")
                     merged_count += 1
                     trigger_channel_publishing(out_path, start_ep, end_ep, dur_mins)
+                    cleanup_merged_source_episodes(g_eps, out_name, config)
+                    log_event(f"Ghép video thành công: {out_name} ({dur_mins:.1f} phút)", level="INFO")
                 else:
                     print(f"      [X] Lỗi ghép video: {res_fb.stderr[:200]}")
         except Exception as ex:

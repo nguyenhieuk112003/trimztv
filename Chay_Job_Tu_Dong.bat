@@ -5,5 +5,9 @@ cd /d "%~dp0"
 echo ========================================================
 echo   KHOI DONG CON JOB TAI, XOA LOGO & GHEP VIDEO (MAX 40P)
 echo ========================================================
-python "%~dp0TrimzAutoJob.py" %*
+if exist "%~dp0tools\python\python.exe" (
+    "%~dp0tools\python\python.exe" "%~dp0TrimzAutoJob.py" %*
+) else (
+    python "%~dp0TrimzAutoJob.py" %*
+)
 pause

@@ -5,5 +5,9 @@ cd /d "%~dp0"
 echo ========================================================
 echo   CHAY TAI VIDEO GOC (KHONG RE-ENCODE XOA LOGO)
 echo ========================================================
-python "%~dp0TrimzAutoJob.py" --no-delogo %*
+if exist "%~dp0tools\python\python.exe" (
+    "%~dp0tools\python\python.exe" "%~dp0TrimzAutoJob.py" --no-delogo %*
+) else (
+    python "%~dp0TrimzAutoJob.py" --no-delogo %*
+)
 pause

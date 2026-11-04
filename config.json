@@ -3,6 +3,7 @@
   "crawl_homepage": true,
   "custom_urls_file": "danh_sach_phim.txt",
   "output_dir": "Downloads",
+  "cleanup_source_episodes": true,
   "delogo": {
     "enabled": true,
     "position": "top-right",
