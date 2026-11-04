@@ -15,19 +15,24 @@ set /p CHOICE="Nhap lua chon (1, 2 hoac 3): "
 if "%CHOICE%"=="1" (
     echo.
     echo [*] Dang mo trinh duyet de dang nhap KENH 1 (Phim Goc Full)...
-    python youtube_uploader.py --auth-only --token "tokens/yt_kenh1_raw.json"
+    set SECRETS=client_secrets_k1.json
+    if not exist "client_secrets_k1.json" set SECRETS=client_secrets.json
+    python youtube_uploader.py --auth-only --token "tokens/yt_kenh1_raw.json" --secrets "%SECRETS%"
 ) else if "%CHOICE%"=="2" (
     echo.
     echo [*] Dang mo trinh duyet de dang nhap KENH 2 (Review Anime Tieng Anh)...
-    python youtube_uploader.py --auth-only --token "tokens/yt_kenh2_en.json"
+    set SECRETS=client_secrets_k2.json
+    if not exist "client_secrets_k2.json" set SECRETS=client_secrets.json
+    python youtube_uploader.py --auth-only --token "tokens/yt_kenh2_en.json" --secrets "%SECRETS%"
 ) else if "%CHOICE%"=="3" (
     echo.
     echo [*] Dang mo trinh duyet de dang nhap KENH 3 (Tom Tat Anime Tieng Viet)...
-    python youtube_uploader.py --auth-only --token "tokens/yt_kenh3_vi.json"
+    set SECRETS=client_secrets_k3.json
+    if not exist "client_secrets_k3.json" set SECRETS=client_secrets.json
+    python youtube_uploader.py --auth-only --token "tokens/yt_kenh3_vi.json" --secrets "%SECRETS%"
 ) else (
     echo [!] Lua chon khong hop le.
 )
 
 echo.
 pause
-

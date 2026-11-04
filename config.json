@@ -16,14 +16,8 @@
   },
   "merge": {
     "enabled": true,
-    "max_duration_minutes": 30,
-    "output_folder": "Ghep_Video_30Phut"
-  },
-  "channels": {
-    "channel_1_raw": true,
-    "channel_2_english_recap": true,
-    "channel_3_vietnamese_recap": true,
-    "gemini_api_key": ""
+    "max_duration_minutes": 40,
+    "output_folder": "Ghep_Video"
   },
   "ai_recap": {
     "enabled": true,
@@ -44,7 +38,7 @@
       "youtube": {
         "enabled": false,
         "token_file": "tokens/yt_kenh1_raw.json",
-        "client_secrets_file": "client_secrets.json",
+        "client_secrets_file": "client_secrets_k1.json",
         "privacy_status": "unlisted",
         "category_id": "1"
       },
@@ -59,7 +53,7 @@
       "youtube": {
         "enabled": false,
         "token_file": "tokens/yt_kenh2_en.json",
-        "client_secrets_file": "client_secrets.json",
+        "client_secrets_file": "client_secrets_k2.json",
         "privacy_status": "unlisted",
         "category_id": "1"
       },
@@ -74,7 +68,7 @@
       "youtube": {
         "enabled": false,
         "token_file": "tokens/yt_kenh3_vi.json",
-        "client_secrets_file": "client_secrets.json",
+        "client_secrets_file": "client_secrets_k3.json",
         "privacy_status": "unlisted",
         "category_id": "1"
       },

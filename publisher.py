@@ -53,12 +53,18 @@ def publish_to_channel(channel_key: str, video_path: str, metadata: dict, config
 
     if yt_cfg.get("enabled", False):
         token_file = yt_cfg.get("token_file", f"tokens/yt_{channel_key}.json")
-        secrets_file = yt_cfg.get("client_secrets_file", "client_secrets.json")
+        secrets_file = yt_cfg.get("client_secrets_file", f"client_secrets_{channel_key}.json")
         privacy_status = yt_cfg.get("privacy_status", "unlisted")
         category_id = yt_cfg.get("category_id", "1")
 
         secrets_full = os.path.join(BASE_DIR, secrets_file) if not os.path.isabs(secrets_file) else secrets_file
         token_full = os.path.join(BASE_DIR, token_file) if not os.path.isabs(token_file) else token_file
+
+        # Fallback dùng client_secrets.json nếu file riêng không tồn tại
+        if not os.path.isfile(secrets_full):
+            fallback_secrets = os.path.join(BASE_DIR, "client_secrets.json")
+            if os.path.isfile(fallback_secrets):
+                secrets_full = fallback_secrets
 
         if os.path.isfile(secrets_full) or os.path.isfile(token_full):
             try:
@@ -79,7 +85,7 @@ def publish_to_channel(channel_key: str, video_path: str, metadata: dict, config
             except Exception as e_yt:
                 print(f"   [!] Lỗi khi upload YouTube ({channel_name}): {e_yt}")
         else:
-            print(f"   [i] Bỏ qua YouTube ({channel_name}): Chưa cấu hình file secrets/token ({secrets_file}).")
+            print(f"   [i] Bỏ qua YouTube ({channel_name}): Chưa có file secrets ({os.path.basename(secrets_full)}) hoặc token ({os.path.basename(token_full)}).")
 
     # 2. ĐĂNG LÊN FACEBOOK NẾU BẬT
     fb_cfg = dist_cfg.get("facebook", {})
@@ -119,4 +125,3 @@ def publish_to_channel(channel_key: str, video_path: str, metadata: dict, config
             pass
 
     return results
-
