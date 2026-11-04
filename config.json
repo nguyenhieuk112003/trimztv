@@ -22,7 +22,7 @@
   "ai_recap": {
     "enabled": true,
     "api_key": "",
-    "model": "gemini-1.5-flash",
+    "model": "gemini-flash-latest",
     "languages": [
       "vi",
       "en"

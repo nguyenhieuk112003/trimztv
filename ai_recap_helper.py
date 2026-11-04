@@ -16,11 +16,28 @@ import os
 import sys
 import re
 import json
+import time
 import asyncio
 import subprocess
 import urllib.request
 import urllib.error
 import urllib.parse
+
+def load_dotenv():
+    base = os.path.dirname(os.path.abspath(__file__))
+    env_file = os.path.join(base, ".env")
+    if os.path.isfile(env_file):
+        try:
+            with open(env_file, "r", encoding="utf-8") as ef:
+                for line in ef:
+                    line = line.strip()
+                    if line and not line.startswith("#") and "=" in line:
+                        k, v = line.split("=", 1)
+                        os.environ.setdefault(k.strip(), v.strip().strip('"').strip("'"))
+        except Exception:
+            pass
+
+load_dotenv()
 
 # Đảm bảo console UTF-8 trên Windows
 if hasattr(sys.stdout, "reconfigure"):
@@ -117,15 +134,16 @@ def extract_audio_for_analysis(ffmpeg_bin: str, video_path: str, out_audio_path:
         return False
 
 
-def call_gemini_api(api_key: str, prompt: str, model: str = "gemini-1.5-flash",
+def call_gemini_api(api_key: str, prompt: str, model: str = "gemini-flash-latest",
                     file_uri: str = None, file_mime_type: str = "audio/mp3",
-                    timeout: int = 120) -> str:
-    """Gọi trực tiếp Google Gemini REST API kèm hỗ trợ File URI (Audio / Video Multimodal)."""
+                    timeout: int = 120, max_retries: int = 5) -> str:
+    """Gọi trực tiếp Google Gemini REST API kèm cơ chế tự động thử lại (Retry & Backoff) khi gặp lỗi 503/429."""
     if not api_key:
         raise ValueError("Chưa cấu hình GEMINI_API_KEY.")
 
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
-    headers = {"Content-Type": "application/json"}
+    candidate_models = [model]
+    if model != "gemini-flash-latest":
+        candidate_models.append("gemini-flash-latest")
 
     parts = []
     if file_uri:
@@ -138,30 +156,48 @@ def call_gemini_api(api_key: str, prompt: str, model: str = "gemini-1.5-flash",
     parts.append({"text": prompt})
 
     payload = {
-        "contents": [
-            {
-                "parts": parts
-            }
-        ],
+        "contents": [{"parts": parts}],
         "generationConfig": {
             "temperature": 0.7,
             "maxOutputTokens": 8192
         }
     }
+    data_bytes = json.dumps(payload).encode("utf-8")
+    headers = {"Content-Type": "application/json"}
 
-    req = urllib.request.Request(url, data=json.dumps(payload).encode("utf-8"), headers=headers, method="POST")
-    try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
-            candidates = data.get("candidates", [])
-            if candidates and "content" in candidates[0]:
-                c_parts = candidates[0]["content"].get("parts", [])
-                if c_parts:
-                    return c_parts[0].get("text", "")
-            return ""
-    except urllib.error.HTTPError as e:
-        err_msg = e.read().decode("utf-8", errors="ignore")
-        raise RuntimeError(f"Lỗi Gemini API ({e.code}): {err_msg}")
+    last_error = None
+    for cur_model in candidate_models:
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{cur_model}:generateContent?key={api_key}"
+        for attempt in range(1, max_retries + 1):
+            req = urllib.request.Request(url, data=data_bytes, headers=headers, method="POST")
+            try:
+                with urllib.request.urlopen(req, timeout=timeout) as resp:
+                    data = json.loads(resp.read().decode("utf-8"))
+                    candidates = data.get("candidates", [])
+                    if candidates and "content" in candidates[0]:
+                        c_parts = candidates[0]["content"].get("parts", [])
+                        if c_parts:
+                            return c_parts[0].get("text", "")
+                    return ""
+            except urllib.error.HTTPError as e:
+                err_msg = e.read().decode("utf-8", errors="ignore")
+                last_error = f"HTTP {e.code}: {err_msg}"
+                if e.code == 404:
+                    break
+                if e.code in (429, 500, 502, 503, 504) and attempt < max_retries:
+                    wait_sec = 2 ** attempt
+                    print(f"      [!] Gemini bận ({e.code}), tự động thử lại sau {wait_sec}s...")
+                    time.sleep(wait_sec)
+                    continue
+                raise RuntimeError(f"Lỗi Gemini API ({e.code}): {err_msg}")
+            except Exception as e:
+                last_error = str(e)
+                if attempt < max_retries:
+                    time.sleep(2 ** attempt)
+                    continue
+                raise
+
+    raise RuntimeError(f"Không thể kết nối Gemini API sau {max_retries} lần thử: {last_error}")
 
 
 def clean_gemini_json(raw_text: str) -> str:
@@ -191,7 +227,7 @@ def get_audio_duration(ffmpeg_bin: str, file_path: str) -> float:
 # -----------------------------------------------------------------------------
 def generate_full_storyline(api_key: str, show_title: str, show_desc: str,
                             start_ep: int, end_ep: int, duration_mins: float,
-                            language: str = "vi", model: str = "gemini-1.5-flash",
+                            language: str = "vi", model: str = "gemini-flash-latest",
                             source_audio_path: str = None) -> dict:
     """
     Sinh kịch bản tóm tắt anime dài, chia nhiều Hồi (Acts) tương ứng với thời lượng video.
@@ -418,7 +454,7 @@ Chỉ xuất ra đoạn văn bản thuyết minh thuần túy của Hồi này:
 
 def generate_recap_content(api_key: str, show_title: str, show_desc: str,
                            start_ep: int, end_ep: int, duration_mins: float = 10.0,
-                           language: str = "vi", model: str = "gemini-1.5-flash",
+                           language: str = "vi", model: str = "gemini-flash-latest",
                            source_audio_path: str = None) -> dict:
     """Wrapper tương thích ngược cho AutoAnimeRecap.py."""
     data = generate_full_storyline(
@@ -710,7 +746,7 @@ def process_channel_review(ffmpeg_bin: str, raw_merged_video: str, show_title: s
         print(f"      [!] Bỏ qua tạo video Review {lang_upper}: Chưa cấu hình GEMINI_API_KEY trong config.json.")
         return ""
 
-    model = ai_cfg.get("model", "gemini-1.5-flash")
+    model = ai_cfg.get("model", "gemini-flash-latest")
     print(f"\n      🌟 [REVIEW TOÀN BỘ PHIM - {lang_upper}] Phim: \"{show_title}\" ({duration_mins:.1f} phút)")
 
     # Bóc tách âm thanh thực tế từ video để AI phân tích nếu có file video
