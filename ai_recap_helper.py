@@ -136,14 +136,16 @@ def extract_audio_for_analysis(ffmpeg_bin: str, video_path: str, out_audio_path:
 
 def call_gemini_api(api_key: str, prompt: str, model: str = "gemini-flash-latest",
                     file_uri: str = None, file_mime_type: str = "audio/mp3",
-                    timeout: int = 120, max_retries: int = 5) -> str:
-    """Gọi trực tiếp Google Gemini REST API kèm cơ chế tự động thử lại (Retry & Backoff) khi gặp lỗi 503/429."""
+                    timeout: int = 120, max_retries: int = 4) -> str:
+    """Gọi trực tiếp Google Gemini REST API kèm cơ chế tự động thử lại (Retry and Backoff) và đổi model dự phòng."""
     if not api_key:
         raise ValueError("Chưa cấu hình GEMINI_API_KEY.")
 
-    candidate_models = [model]
-    if model != "gemini-flash-latest":
-        candidate_models.append("gemini-flash-latest")
+    raw_candidates = [model, "gemini-3.5-flash", "gemini-flash-latest", "gemini-flash-lite-latest"]
+    candidate_models = []
+    for m in raw_candidates:
+        if m and m not in candidate_models:
+            candidate_models.append(m)
 
     parts = []
     if file_uri:
@@ -183,21 +185,30 @@ def call_gemini_api(api_key: str, prompt: str, model: str = "gemini-flash-latest
                 err_msg = e.read().decode("utf-8", errors="ignore")
                 last_error = f"HTTP {e.code}: {err_msg}"
                 if e.code == 404:
+                    print(f"      [!] Model '{cur_model}' không khả dụng (404), chuyển sang model tiếp theo...")
                     break
-                if e.code in (429, 500, 502, 503, 504) and attempt < max_retries:
-                    wait_sec = 2 ** attempt
-                    print(f"      [!] Gemini bận ({e.code}), tự động thử lại sau {wait_sec}s...")
-                    time.sleep(wait_sec)
-                    continue
+                if e.code in (429, 500, 502, 503, 504):
+                    if attempt < max_retries:
+                        wait_sec = 2 ** attempt
+                        print(f"      [!] Gemini '{cur_model}' bận ({e.code}), thử lại sau {wait_sec}s (lần {attempt}/{max_retries})...")
+                        time.sleep(wait_sec)
+                        continue
+                    else:
+                        print(f"      [!] Model '{cur_model}' quá tải sau {max_retries} lần, chuyển sang model dự phòng...")
+                        break
                 raise RuntimeError(f"Lỗi Gemini API ({e.code}): {err_msg}")
             except Exception as e:
                 last_error = str(e)
                 if attempt < max_retries:
-                    time.sleep(2 ** attempt)
+                    wait_sec = 2 ** attempt
+                    print(f"      [!] Lỗi kết nối Gemini '{cur_model}' ({e}), thử lại sau {wait_sec}s...")
+                    time.sleep(wait_sec)
                     continue
-                raise
+                else:
+                    print(f"      [!] Model '{cur_model}' lỗi sau {max_retries} lần, chuyển model dự phòng...")
+                    break
 
-    raise RuntimeError(f"Không thể kết nối Gemini API sau {max_retries} lần thử: {last_error}")
+    raise RuntimeError(f"Không thể kết nối Gemini API sau khi thử các model: {last_error}")
 
 
 def clean_gemini_json(raw_text: str) -> str:
