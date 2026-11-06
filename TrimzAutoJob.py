@@ -702,6 +702,7 @@ def merge_show_episodes(show_dir: str, show_title: str, config: dict, ffmpeg_bin
 
             # BƯỚC 1: Xử lý kịch bản, lồng tiếng & xuất bản Kênh 2 (Review EN) và Kênh 3 (Review VI) TRƯỚC
             # (Vì các kênh này cần file raw_merged_video để bóc tách âm thanh và làm audio ducking)
+            ai_all_ok = True
             if ai_cfg.get("enabled", True):
                 ai_cfg_copy = dict(ai_cfg)
                 ai_cfg_copy["full_config"] = config
@@ -710,7 +711,7 @@ def merge_show_episodes(show_dir: str, show_title: str, config: dict, ffmpeg_bin
                     for lang in ai_cfg.get("languages", ["vi", "en"]):
                         sub_chan = "Kenh_3_Review_VI" if lang == "vi" else "Kenh_2_Review_EN"
                         chan_dir = os.path.join(target_dir, sub_chan)
-                        process_channel_review(
+                        res_vid = process_channel_review(
                             ffmpeg_bin=ffmpeg_bin,
                             raw_merged_video=final_video_path,
                             show_title=show_title,
@@ -723,8 +724,11 @@ def merge_show_episodes(show_dir: str, show_title: str, config: dict, ffmpeg_bin
                             ai_cfg=ai_cfg_copy,
                             yt_cfg=config.get("youtube_upload", {})
                         )
+                        if not res_vid:
+                            ai_all_ok = False
                 except Exception as e_ai:
                     print(f"      [!] Lỗi khi xử lý AI Recap: {e_ai}")
+                    ai_all_ok = False
 
             # BƯỚC 2: Tự động xuất bản Kênh 1 (Raw Full) nếu bật
             k1_published = False
@@ -749,8 +753,8 @@ def merge_show_episodes(show_dir: str, show_title: str, config: dict, ffmpeg_bin
             else:
                 k1_published = True
 
-            # BƯỚC 3: TỰ ĐỘNG XÓA FILE VIDEO DÀI GỐC NẾU TẤT CẢ KÊNH ĐÃ HOÀN TẤT
-            if config.get("cleanup_published_videos", True) and k1_published:
+            # BƯỚC 3: TỰ ĐỘNG XÓA FILE VIDEO DÀI GỐC CHỈ KHI TẤT CẢ KÊNH ĐỀU ĐĂNG THÀNH CÔNG
+            if config.get("cleanup_published_videos", True) and k1_published and ai_all_ok:
                 has_any_pub = (
                     k1_needed or
                     dist_cfg.get("kenh_2_en", {}).get("youtube", {}).get("enabled", False) or
