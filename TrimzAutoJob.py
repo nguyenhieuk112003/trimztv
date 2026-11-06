@@ -161,20 +161,57 @@ def save_config(config: dict):
         json.dump(config, f, indent=2, ensure_ascii=False)
 
 
+def update_summary_tracker(history: dict):
+    """Ghi bảng tóm tắt tiến độ các phim ra file logs/lich_su_tai_phim.txt để xem nhanh."""
+    summary_file = os.path.join(LOG_DIR, "lich_su_tai_phim.txt")
+    shows = history.get("shows", {})
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    lines = [
+        "=" * 70,
+        f"  BẢNG TIẾN ĐỘ TẢI TẬP PHIM TRIMZ.TV (Cập nhật: {now_str})",
+        "=" * 70,
+    ]
+    if not shows:
+        lines.append("  Chưa có dữ liệu phim nào được tải.")
+    else:
+        for idx, (title, sinfo) in enumerate(shows.items(), start=1):
+            last_ep = sinfo.get("last_downloaded_episode", 0)
+            total_eps = sinfo.get("total_episodes_found", 0)
+            status = "Hoàn tất" if last_ep >= total_eps and total_eps > 0 else "Đang cập nhật"
+            updated = sinfo.get("last_updated", "")
+            lines.append(f"  {idx:02d}. Phim: \"{title}\"")
+            lines.append(f"      - Tiến độ: Đã tải đến tập {last_ep:03d} / {total_eps:03d} tập ({status})")
+            lines.append(f"      - Link gốc: {sinfo.get('url', '')}")
+            lines.append(f"      - Cập nhật lần cuối: {updated}")
+            lines.append("-" * 70)
+    lines.append("=" * 70)
+    try:
+        with open(summary_file, "w", encoding="utf-8") as f:
+            f.write("\n".join(lines) + "\n")
+    except Exception:
+        pass
+
+
 def load_history() -> dict:
     if os.path.isfile(HISTORY_FILE):
         try:
             with open(HISTORY_FILE, "r", encoding="utf-8") as f:
-                return json.load(f)
+                h = json.load(f)
+                if "shows" not in h:
+                    h["shows"] = {}
+                if "processed_urls" not in h:
+                    h["processed_urls"] = []
+                return h
         except Exception:
             pass
-    return {"processed_urls": [], "last_check": ""}
+    return {"processed_urls": [], "shows": {}, "last_check": ""}
 
 
 def save_history(history: dict):
     history["last_check"] = datetime.now().isoformat()
     with open(HISTORY_FILE, "w", encoding="utf-8") as f:
         json.dump(history, f, indent=2, ensure_ascii=False)
+    update_summary_tracker(history)
 
 
 def fetch_url(url: str, timeout: int = 15) -> str:
@@ -428,8 +465,69 @@ def process_single_show(show_url: str, config: dict, history: dict, ffmpeg_bin: 
     processed_set = set(history.get("processed_urls", []))
     new_downloaded = 0
 
+    # Khởi tạo hoặc lấy bản ghi tiến độ tải của phim trong history
+    show_rec = history.setdefault("shows", {}).setdefault(info["title"], {
+        "url": show_url,
+        "last_downloaded_episode": 0,
+        "downloaded_episodes": [],
+        "total_episodes_found": len(episodes),
+        "last_updated": ""
+    })
+    show_rec["total_episodes_found"] = len(episodes)
+    show_rec["url"] = show_url
+
+    already_eps = [i for i, u in enumerate(episodes, start=1) if u in processed_set]
+    new_eps = [i for i, u in enumerate(episodes, start=1) if u not in processed_set]
+
+    # Đồng bộ các tập đã tải trước đó vào show_rec nếu chưa có
+    for ep_num in already_eps:
+        if ep_num not in show_rec["downloaded_episodes"]:
+            show_rec["downloaded_episodes"].append(ep_num)
+    if show_rec["downloaded_episodes"]:
+        show_rec["downloaded_episodes"].sort()
+        show_rec["last_downloaded_episode"] = max(show_rec["downloaded_episodes"])
+
     print(f"\n🎬 PHIM: \"{info['title']}\" ({len(episodes)} tập)")
     print(f"   📁 Thư mục lưu: {show_dir}")
+
+    if not new_eps:
+        last_ep = show_rec["last_downloaded_episode"]
+        print(f"   ℹ️ ĐÃ TẢI ĐỦ: Đã tải đến tập {last_ep:03d}/{len(episodes):03d} (Không có tập mới cần tải).")
+        log_event(f"Phim '{info['title']}': Đã tải đủ đến tập {last_ep:03d}/{len(episodes):03d} (Không có tập mới)", level="SKIP")
+    else:
+        last_done = show_rec["last_downloaded_episode"]
+        print(f"   🔥 PHÁT HIỆN {len(new_eps)} TẬP MỚI: Tải từ tập {min(new_eps):03d} -> {max(new_eps):03d} (Đã có đến tập {last_done:03d})")
+        log_event(f"Phim '{info['title']}': Phát hiện {len(new_eps)} tập mới (từ tập {min(new_eps):03d} đến {max(new_eps):03d})", level="INFO")
+
+    def record_episode_success(ep_idx: int, f_path: str, v_u: str):
+        nonlocal new_downloaded
+        sz_mb = os.path.getsize(f_path) / (1024 * 1024) if os.path.isfile(f_path) else 0
+        if ep_idx not in show_rec["downloaded_episodes"]:
+            show_rec["downloaded_episodes"].append(ep_idx)
+            show_rec["downloaded_episodes"].sort()
+        show_rec["last_downloaded_episode"] = max(show_rec["downloaded_episodes"])
+        show_rec["last_updated"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        history["processed_urls"].append(v_u)
+        processed_set.add(v_u)
+        save_history(history)
+        new_downloaded += 1
+
+        # Cập nhật info.json trong thư mục phim với thông tin chi tiết tập đã tải
+        try:
+            show_info_path = os.path.join(show_dir, "info.json")
+            with open(show_info_path, "w", encoding="utf-8") as f_inf:
+                json.dump({
+                    "title": info["title"],
+                    "description": info.get("description", ""),
+                    "url": show_url,
+                    "last_downloaded_episode": show_rec["last_downloaded_episode"],
+                    "total_episodes": len(episodes),
+                    "downloaded_episodes": show_rec["downloaded_episodes"],
+                    "status": f"Đã tải {len(show_rec['downloaded_episodes'])}/{len(episodes)} tập",
+                    "last_updated": show_rec["last_updated"]
+                }, f_inf, indent=2, ensure_ascii=False)
+        except Exception:
+            pass
 
     for idx, v_url in enumerate(episodes, start=1):
         filename = f"Tap_{idx:03d}.mp4"
@@ -439,7 +537,7 @@ def process_single_show(show_url: str, config: dict, history: dict, ffmpeg_bin: 
         if v_url in processed_set:
             continue
 
-        print(f"   ▶ Tập {idx:03d}/{len(episodes):03d} ({filename}):")
+        print(f"   ▶ Đang tải Tập {idx:03d}/{len(episodes):03d} ({filename}):")
         log_event(f"Bắt đầu tải: '{info['title']}' - Tập {idx:03d}/{len(episodes):03d} ({filename})", level="DOWNLOAD")
 
         # Trường hợp xóa logo: Tải file tạm -> Xử lý delogo -> Xuất file đích
@@ -450,21 +548,16 @@ def process_single_show(show_url: str, config: dict, history: dict, ffmpeg_bin: 
                 success = apply_delogo(ffmpeg_bin, temp_path, final_path, delogo_cfg)
                 if success:
                     sz_mb = os.path.getsize(final_path) / (1024 * 1024)
-                    print(f"      [✓] Hoàn thành & Đã xóa logo: {filename} ({sz_mb:.2f} MB)")
-                    log_event(f"Tải và xóa logo thành công: '{info['title']}' - {filename} ({sz_mb:.2f} MB)", level="SUCCESS")
-                    history["processed_urls"].append(v_url)
-                    processed_set.add(v_url)
-                    save_history(history)
-                    new_downloaded += 1
+                    print(f"      [✓] Hoàn thành & Đã xóa logo: {filename} ({sz_mb:.2f} MB) -> Đã tải đến tập {idx:03d}/{len(episodes):03d}")
+                    log_event(f"Tải và xóa logo thành công: '{info['title']}' - {filename} ({sz_mb:.2f} MB) | Đã tải đến tập {idx:03d}/{len(episodes):03d}", level="SUCCESS")
+                    record_episode_success(idx, final_path, v_url)
                 else:
                     # Nếu lỗi delogo thì giữ lại file gốc
                     if os.path.isfile(temp_path):
                         os.replace(temp_path, final_path)
-                        print(f"      [!] Giữ lại file gốc (bỏ qua xóa logo): {filename}")
-                        history["processed_urls"].append(v_url)
-                        processed_set.add(v_url)
-                        save_history(history)
-                        new_downloaded += 1
+                        print(f"      [!] Giữ lại file gốc (bỏ qua xóa logo): {filename} -> Đã tải đến tập {idx:03d}/{len(episodes):03d}")
+                        log_event(f"Tải file gốc thành công: '{info['title']}' - {filename} | Đã tải đến tập {idx:03d}/{len(episodes):03d}", level="SUCCESS")
+                        record_episode_success(idx, final_path, v_url)
             except Exception as e:
                 print(f"      [X] Lỗi tải/xử lý tập {idx}: {e}")
             finally:
@@ -477,11 +570,10 @@ def process_single_show(show_url: str, config: dict, history: dict, ffmpeg_bin: 
             # Tải trực tiếp không cần re-encode
             try:
                 download_file(v_url, final_path)
-                print(f"      [✓] Hoàn tất tải: {filename} ({os.path.getsize(final_path)/(1024*1024):.2f} MB)")
-                history["processed_urls"].append(v_url)
-                processed_set.add(v_url)
-                save_history(history)
-                new_downloaded += 1
+                sz_mb = os.path.getsize(final_path) / (1024 * 1024)
+                print(f"      [✓] Hoàn tất tải: {filename} ({sz_mb:.2f} MB) -> Đã tải đến tập {idx:03d}/{len(episodes):03d}")
+                log_event(f"Hoàn tất tải: '{info['title']}' - {filename} ({sz_mb:.2f} MB) | Đã tải đến tập {idx:03d}/{len(episodes):03d}", level="SUCCESS")
+                record_episode_success(idx, final_path, v_url)
             except Exception as e:
                 print(f"      [X] Lỗi tải tập {idx}: {e}")
     # Tự động ghép các tập video đã tải thành các video tối đa X phút (mặc định 40 phút)

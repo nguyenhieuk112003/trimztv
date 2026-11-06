@@ -16,6 +16,9 @@ Downloads/
 *.wav
 *.mkv
 
+# Runtime logs
+logs/
+
 # Environments & editor files
 .env
 .venv

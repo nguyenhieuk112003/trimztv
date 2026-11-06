@@ -6,5 +6,20 @@
     "https://cdn.trimz.co/generated-videos/ms_videos/f3a72642-4a23-4d60-9ea5-6a420189ce69_ep_render_84444ec6-5704-42d6-8499-91edf74e8823_f25cf1a5579f42339b9a2f2ba122c783.mp4",
     "https://cdn.trimz.co/generated-videos/ms_videos/f3a72642-4a23-4d60-9ea5-6a420189ce69_ep_render_f9910df4-6857-492e-b6cf-9dc246d06f28_cf76d280e8dc4b60aa72a84fd78a2716.mp4"
   ],
-  "last_check": "2026-10-30T19:31:05.690975"
+  "last_check": "2026-11-06T21:48:00.922933",
+  "shows": {
+    "Black Grade": {
+      "url": "https://trimz.tv/black-grade",
+      "last_downloaded_episode": 5,
+      "downloaded_episodes": [
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "total_episodes_found": 5,
+      "last_updated": "2026-10-30T19:31:05.690975"
+    }
+  }
 }
