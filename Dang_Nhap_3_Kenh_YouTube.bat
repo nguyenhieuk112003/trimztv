@@ -1,6 +1,8 @@
 @echo off
 chcp 65001 >nul
 title Dang Nhap 3 Kenh YouTube Doc Lap
+cd /d "%~dp0"
+if not exist "%~dp0tokens" mkdir "%~dp0tokens"
 echo =====================================================================
 echo       CON JOB YOUTUBE - XÁC THỰC 3 KÊNH YOUTUBE ĐỘC LẬP
 echo =====================================================================
