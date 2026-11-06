@@ -24,8 +24,7 @@
     "api_key": "",
     "model": "gemini-3.5-flash",
     "languages": [
-      "vi",
-      "en"
+      "vi"
     ],
     "voice_vi": "vi-VN-NamMinhNeural",
     "voice_en": "en-US-ChristopherNeural",
