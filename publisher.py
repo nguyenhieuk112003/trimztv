@@ -144,4 +144,19 @@ def publish_to_channel(channel_key: str, video_path: str, metadata: dict, config
         except Exception:
             pass
 
+    # 3. TỰ ĐỘNG XÓA FILE VIDEO DÀI SAU KHI ĐĂNG THÀNH CÔNG NẾU BẬT CẤU HÌNH DỌN DẸP
+    if config.get("cleanup_published_videos", True):
+        yt_is_on = yt_cfg.get("enabled", False)
+        fb_is_on = fb_cfg.get("enabled", False)
+        if yt_is_on or fb_is_on:
+            yt_ok = (results["youtube_video_id"] is not None) if yt_is_on else True
+            fb_ok = (results["facebook_video_id"] is not None) if fb_is_on else True
+            if yt_ok and fb_ok and channel_key != "kenh_1_raw" and os.path.isfile(video_path):
+                try:
+                    sz_mb = os.path.getsize(video_path) / (1024 * 1024)
+                    os.remove(video_path)
+                    print(f"   🧹 [DỌN DẸP Ổ CỨNG] Đã đăng thành công ({channel_name})! Tự động xóa {os.path.basename(video_path)} ({sz_mb:.1f} MB) để nhẹ máy.")
+                except Exception as e_del:
+                    print(f"   [!] Không thể xóa video {os.path.basename(video_path)}: {e_del}")
+
     return results

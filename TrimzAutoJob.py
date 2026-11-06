@@ -696,10 +696,40 @@ def merge_show_episodes(show_dir: str, show_title: str, config: dict, ffmpeg_bin
         print(f"\n   ▶ Part {part_idx:02d}/{len(groups):02d} (Tập {start_ep:03d} -> {end_ep:03d} | {len(g_eps)} tập | {dur_mins:.1f} phút):")
 
         def trigger_channel_publishing(final_video_path: str, p_start: int, p_end: int, p_dur: float):
-            # 1. Tự động xuất bản Kênh 1 (Raw Full) nếu bật
             dist_cfg = config.get("channels_distribution", {})
             k1_cfg = dist_cfg.get("kenh_1_raw", {})
-            if k1_cfg.get("youtube", {}).get("enabled", False) or k1_cfg.get("facebook", {}).get("enabled", False):
+            ai_cfg = config.get("ai_recap", {})
+
+            # BƯỚC 1: Xử lý kịch bản, lồng tiếng & xuất bản Kênh 2 (Review EN) và Kênh 3 (Review VI) TRƯỚC
+            # (Vì các kênh này cần file raw_merged_video để bóc tách âm thanh và làm audio ducking)
+            if ai_cfg.get("enabled", True):
+                ai_cfg_copy = dict(ai_cfg)
+                ai_cfg_copy["full_config"] = config
+                try:
+                    from ai_recap_helper import process_channel_review
+                    for lang in ai_cfg.get("languages", ["vi", "en"]):
+                        sub_chan = "Kenh_3_Review_VI" if lang == "vi" else "Kenh_2_Review_EN"
+                        chan_dir = os.path.join(target_dir, sub_chan)
+                        process_channel_review(
+                            ffmpeg_bin=ffmpeg_bin,
+                            raw_merged_video=final_video_path,
+                            show_title=show_title,
+                            show_desc=show_desc,
+                            start_ep=p_start,
+                            end_ep=p_end,
+                            duration_mins=p_dur,
+                            lang=lang,
+                            out_folder=chan_dir,
+                            ai_cfg=ai_cfg_copy,
+                            yt_cfg=config.get("youtube_upload", {})
+                        )
+                except Exception as e_ai:
+                    print(f"      [!] Lỗi khi xử lý AI Recap: {e_ai}")
+
+            # BƯỚC 2: Tự động xuất bản Kênh 1 (Raw Full) nếu bật
+            k1_published = False
+            k1_needed = k1_cfg.get("youtube", {}).get("enabled", False) or k1_cfg.get("facebook", {}).get("enabled", False)
+            if k1_needed:
                 raw_title = f"{show_title} - Tập {p_start:03d}-{p_end:03d} (Full 1080p)" if p_start != p_end else f"{show_title} - Tập {p_start:03d} (Full 1080p)"
                 raw_desc = f"Xem trọn bộ phim {show_title} (Tập {p_start} - {p_end}).\n\n{show_desc}\n\n#anime #{safe_title.lower().replace(' ', '')} #fullhd"
                 k1_meta = {
@@ -710,36 +740,33 @@ def merge_show_episodes(show_dir: str, show_title: str, config: dict, ffmpeg_bin
                 k1_payload = os.path.join(target_dir, f"{safe_title}_Part_{part_idx:02d}_RAW_PAYLOAD.json")
                 try:
                     from publisher import publish_to_channel
-                    publish_to_channel("kenh_1_raw", final_video_path, k1_meta, config, payload_json_path=k1_payload)
+                    k1_res = publish_to_channel("kenh_1_raw", final_video_path, k1_meta, config, payload_json_path=k1_payload)
+                    k1_yt_ok = (k1_res.get("youtube_video_id") is not None) if k1_cfg.get("youtube", {}).get("enabled", False) else True
+                    k1_fb_ok = (k1_res.get("facebook_video_id") is not None) if k1_cfg.get("facebook", {}).get("enabled", False) else True
+                    k1_published = k1_yt_ok and k1_fb_ok
                 except Exception as e_k1:
                     print(f"      [!] Lỗi xuất bản Kênh 1: {e_k1}")
+            else:
+                k1_published = True
 
-            # 2. Xử lý kịch bản, lồng tiếng & xuất bản Kênh 2 (Review EN) và Kênh 3 (Review VI)
-            ai_cfg = config.get("ai_recap", {})
-            if not ai_cfg.get("enabled", True):
-                return
-            ai_cfg_copy = dict(ai_cfg)
-            ai_cfg_copy["full_config"] = config
-            try:
-                from ai_recap_helper import process_channel_review
-                for lang in ai_cfg.get("languages", ["vi", "en"]):
-                    sub_chan = "Kenh_3_Review_VI" if lang == "vi" else "Kenh_2_Review_EN"
-                    chan_dir = os.path.join(target_dir, sub_chan)
-                    process_channel_review(
-                        ffmpeg_bin=ffmpeg_bin,
-                        raw_merged_video=final_video_path,
-                        show_title=show_title,
-                        show_desc=show_desc,
-                        start_ep=p_start,
-                        end_ep=p_end,
-                        duration_mins=p_dur,
-                        lang=lang,
-                        out_folder=chan_dir,
-                        ai_cfg=ai_cfg_copy,
-                        yt_cfg=config.get("youtube_upload", {})
-                    )
-            except Exception as e_ai:
-                print(f"      [!] Lỗi khi xử lý AI Recap: {e_ai}")
+            # BƯỚC 3: TỰ ĐỘNG XÓA FILE VIDEO DÀI GỐC NẾU TẤT CẢ KÊNH ĐÃ HOÀN TẤT
+            if config.get("cleanup_published_videos", True) and k1_published:
+                has_any_pub = (
+                    k1_needed or
+                    dist_cfg.get("kenh_2_en", {}).get("youtube", {}).get("enabled", False) or
+                    dist_cfg.get("kenh_2_en", {}).get("facebook", {}).get("enabled", False) or
+                    dist_cfg.get("kenh_3_vi", {}).get("youtube", {}).get("enabled", False) or
+                    dist_cfg.get("kenh_3_vi", {}).get("facebook", {}).get("enabled", False)
+                )
+                if has_any_pub and os.path.isfile(final_video_path):
+                    try:
+                        sz_mb = os.path.getsize(final_video_path) / (1024 * 1024)
+                        os.remove(final_video_path)
+                        msg_del_raw = f"🧹 [DỌN DẸP Ổ CỨNG] Đã hoàn tất xử lý & xuất bản các kênh! Tự động xóa video dài gốc {os.path.basename(final_video_path)} ({sz_mb:.1f} MB) để nhẹ máy."
+                        print(f"      {msg_del_raw}")
+                        log_event(msg_del_raw, level="CLEAN")
+                    except Exception as e_del_raw:
+                        print(f"      [!] Không thể xóa video dài gốc: {e_del_raw}")
 
         # Kiểm tra nếu file ghép đã tồn tại và mới hơn tất cả các tập nguồn
         if os.path.isfile(out_path) and os.path.getsize(out_path) > 102400:
