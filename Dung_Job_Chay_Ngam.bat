@@ -12,3 +12,4 @@ echo.
 echo [✓] Đã dừng con job thành công!
 echo.
 pause
+

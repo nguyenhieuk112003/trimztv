@@ -534,10 +534,10 @@ def generate_recap_content(api_key: str, show_title: str, show_desc: str,
 # -----------------------------------------------------------------------------
 # BƯỚC 2: TỔNG HỢP GIỌNG ĐỌC BỀN BỈ (EDGE-TTS + RETRY)
 # -----------------------------------------------------------------------------
-async def synth_single_chunk(text: str, voice: str, out_file: str) -> bool:
+async def synth_single_chunk(text: str, voice: str, out_file: str, rate: str = "+12%") -> bool:
     import edge_tts
     try:
-        com = edge_tts.Communicate(text, voice)
+        com = edge_tts.Communicate(text, voice, rate=rate)
         await com.save(out_file)
         if os.path.isfile(out_file) and os.path.getsize(out_file) > 500:
             return True
@@ -547,7 +547,7 @@ async def synth_single_chunk(text: str, voice: str, out_file: str) -> bool:
     # Thử giọng dự phòng nếu giọng chính gặp sự cố
     try:
         fallback = "vi-VN-HoaiMyNeural" if "vi-VN" in voice else "en-US-GuyNeural"
-        com = edge_tts.Communicate(text, fallback)
+        com = edge_tts.Communicate(text, fallback, rate=rate)
         await com.save(out_file)
         if os.path.isfile(out_file) and os.path.getsize(out_file) > 500:
             return True
@@ -565,7 +565,7 @@ async def synth_single_chunk(text: str, voice: str, out_file: str) -> bool:
         return False
 
 
-async def synth_text_chunked(ffmpeg_bin: str, text: str, voice: str, out_file: str, temp_prefix: str) -> bool:
+async def synth_text_chunked(ffmpeg_bin: str, text: str, voice: str, out_file: str, temp_prefix: str, rate: str = "+12%") -> bool:
     """Tách văn bản thành các câu nhỏ (<180 ký tự) để tổng hợp TTS mượt mà không lỗi."""
     clean = re.sub(r'[\'":;]', ' ', text)
     clean = re.sub(r'\s+', ' ', clean).strip()
@@ -591,7 +591,7 @@ async def synth_text_chunked(ffmpeg_bin: str, text: str, voice: str, out_file: s
     sub_files = []
     for idx, c in enumerate(chunks):
         sub_path = f"{temp_prefix}_c{idx:03d}.mp3"
-        ok = await synth_single_chunk(c, voice, sub_path)
+        ok = await synth_single_chunk(c, voice, sub_path, rate=rate)
         if ok:
             sub_files.append(sub_path)
         await asyncio.sleep(0.04)
@@ -632,17 +632,22 @@ async def synth_text_chunked(ffmpeg_bin: str, text: str, voice: str, out_file: s
 # -----------------------------------------------------------------------------
 def build_continuous_narration_audio(ffmpeg_bin: str, acts: list, voice: str,
                                      target_total_sec: float, out_full_mp3: str,
-                                     temp_dir: str) -> tuple:
+                                     temp_dir: str, voice_rate: str = "+12%") -> tuple:
     """
-    1. Tổng hợp âm thanh từng Hồi
-    2. Đo độ dài và tính khoảng nghỉ nhạc đệm giữa các Hồi
-    3. Ghép nối thành 1 dải âm thanh hoàn chỉnh phủ kín toàn bộ thời lượng video
+    1. Tổng hợp giọng đọc AI từng Hồi với tốc độ nói năng động (+12%).
+    2. Căn chỉnh tempo (FFmpeg atempo) cho từng phân đoạn khớp 100% với hoạt ảnh của video,
+       chống trôi lệch âm thanh (Audio Desync).
+    3. Ghép nối thành dải âm thanh hoàn chỉnh chuẩn nhịp điệu phim.
     """
     act_audio_files = []
     chapters_timeline = []
     current_time_sec = 0.0
 
-    print(f"      🎙️ Đang tổng hợp giọng đọc AI ({voice}) cho {len(acts)} Hồi...")
+    num_acts = len(acts)
+    act_target_sec = target_total_sec / max(1, num_acts)
+
+    print(f"      🎙️ Đang tổng hợp giọng đọc AI ({voice} | tốc độ: {voice_rate}) cho {num_acts} Hồi...")
+    print(f"      ⏱️ Đồng bộ hoạt ảnh: Mỗi Hồi khớp ~{act_target_sec:.1f}s diễn biến trên video...")
 
     for idx, act in enumerate(acts, start=1):
         act_text = act.get("narration", "").strip()
@@ -650,48 +655,74 @@ def build_continuous_narration_audio(ffmpeg_bin: str, acts: list, voice: str,
         if not act_text:
             continue
 
-        act_mp3 = os.path.join(temp_dir, f".temp_act_{idx:02d}.mp3")
+        raw_act_mp3 = os.path.join(temp_dir, f".temp_raw_act_{idx:02d}.mp3")
+        final_act_mp3 = os.path.join(temp_dir, f".temp_act_{idx:02d}.mp3")
         temp_p = os.path.join(temp_dir, f".t_act_{idx:02d}")
 
-        print(f"         ▶ Hồi {idx:02d}/{len(acts):02d} ({len(act_text.split())} từ)...", end="", flush=True)
-        ok = asyncio.run(synth_text_chunked(ffmpeg_bin, act_text, voice, act_mp3, temp_p))
-        if ok:
-            dur = get_audio_duration(ffmpeg_bin, act_mp3)
-            print(f" xong ({dur/60:.1f} phút)")
-            act_audio_files.append((act_mp3, dur, act_title))
+        print(f"         ▶ Hồi {idx:02d}/{num_acts:02d} ({len(act_text.split())} từ)...", end="", flush=True)
+        ok = asyncio.run(synth_text_chunked(ffmpeg_bin, act_text, voice, raw_act_mp3, temp_p, rate=voice_rate))
+        if ok and os.path.isfile(raw_act_mp3):
+            dur = get_audio_duration(ffmpeg_bin, raw_act_mp3)
+
+            # CĂN CHỈNH TỐC ĐỘ (ATEMPO) ĐỒNG BỘ CHÍNH XÁC VỚI HOẠT ẢNH
+            adjusted_dur = dur
+            if dur > (act_target_sec - 0.5) and act_target_sec > 5.0:
+                needed_tempo = min(1.30, max(1.02, dur / max(1.0, act_target_sec - 0.8)))
+                cmd_tempo = [
+                    ffmpeg_bin, "-y",
+                    "-i", raw_act_mp3,
+                    "-filter:a", f"atempo={needed_tempo:.3f}",
+                    "-c:a", "libmp3lame", "-b:a", "192k",
+                    final_act_mp3
+                ]
+                subprocess.run(cmd_tempo, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                if os.path.isfile(final_act_mp3) and os.path.getsize(final_act_mp3) > 1024:
+                    adjusted_dur = get_audio_duration(ffmpeg_bin, final_act_mp3)
+                else:
+                    if os.path.isfile(final_act_mp3):
+                        os.remove(final_act_mp3)
+                    os.replace(raw_act_mp3, final_act_mp3)
+            elif dur < (act_target_sec * 0.70) and act_target_sec > 10.0:
+                needed_tempo = max(0.88, dur / (act_target_sec - 1.0))
+                cmd_tempo = [
+                    ffmpeg_bin, "-y",
+                    "-i", raw_act_mp3,
+                    "-filter:a", f"atempo={needed_tempo:.3f}",
+                    "-c:a", "libmp3lame", "-b:a", "192k",
+                    final_act_mp3
+                ]
+                subprocess.run(cmd_tempo, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                if os.path.isfile(final_act_mp3) and os.path.getsize(final_act_mp3) > 1024:
+                    adjusted_dur = get_audio_duration(ffmpeg_bin, final_act_mp3)
+                else:
+                    if os.path.isfile(final_act_mp3):
+                        os.remove(final_act_mp3)
+                    os.replace(raw_act_mp3, final_act_mp3)
+            else:
+                if os.path.isfile(final_act_mp3):
+                    os.remove(final_act_mp3)
+                os.replace(raw_act_mp3, final_act_mp3)
+
+            if os.path.isfile(raw_act_mp3):
+                try:
+                    os.remove(raw_act_mp3)
+                except Exception:
+                    pass
+
+            print(f" xong ({adjusted_dur:.1f}s / mục tiêu: {act_target_sec:.1f}s)")
+            act_audio_files.append((final_act_mp3, adjusted_dur, act_title))
         else:
             print(" [!] Lỗi tổng hợp hồi này.")
 
     if not act_audio_files:
         return False, []
 
-    # Tính khoảng nghỉ âm nhạc giữa các Hồi để vừa khớp thời lượng video
-    total_voice_sec = sum(d for _, d, _ in act_audio_files)
-    remaining_sec = max(0.0, target_total_sec - total_voice_sec)
-    num_gaps = len(act_audio_files)
-    gap_sec = min(8.0, remaining_sec / max(1, num_gaps)) if num_gaps > 0 else 0.0
-
-    print(f"      ⏱️ Tổng thời lượng giọng nói: {total_voice_sec/60:.1f} phút / Video: {target_total_sec/60:.1f} phút")
-    if gap_sec > 0.5:
-        print(f"      🎵 Chèn khoảng đệm âm nhạc tự nhiên: {gap_sec:.1f} giây giữa mỗi Hồi...")
-
-    # Tạo file silence nếu cần
-    gap_mp3 = None
-    if gap_sec >= 1.0:
-        gap_mp3 = os.path.join(temp_dir, ".temp_silence_gap.mp3")
-        subprocess.run([
-            ffmpeg_bin, "-y",
-            "-f", "lavfi", "-i", "anullsrc=r=44100:cl=stereo",
-            "-t", f"{gap_sec:.2f}",
-            "-c:a", "libmp3lame", "-b:a", "192k",
-            gap_mp3
-        ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-
-    # Lập danh sách nối âm thanh kèm Chapters
+    # Ghép nối tuần tự các Hồi, chèn khoảng nghỉ âm nhạc tự nhiên chuẩn nhịp phim
     concat_list = os.path.join(temp_dir, ".temp_full_concat_list.txt")
+    total_acts = len(act_audio_files)
+
     with open(concat_list, "w", encoding="utf-8") as f:
         for idx, (fpath, dur, atitle) in enumerate(act_audio_files):
-            # Ghi nhận mốc thời gian YouTube Chapters
             mins_part = int(current_time_sec // 60)
             secs_part = int(current_time_sec % 60)
             chapters_timeline.append(f"{mins_part:02d}:{secs_part:02d} - {atitle}")
@@ -700,11 +731,25 @@ def build_continuous_narration_audio(ffmpeg_bin: str, acts: list, voice: str,
             f.write(f"file '{clean_path}'\n")
             current_time_sec += dur
 
-            # Chèn khoảng nghỉ giữa các hồi (trừ hồi cuối)
-            if gap_mp3 and os.path.isfile(gap_mp3) and idx < len(act_audio_files) - 1:
-                clean_gap = os.path.abspath(gap_mp3).replace("\\", "/").replace("'", "'\\''")
-                f.write(f"file '{clean_gap}'\n")
-                current_time_sec += gap_sec
+            # Chèn khoảng nghỉ chuyển cảnh tự nhiên trước khi Hồi tiếp theo bắt đầu
+            if idx < total_acts - 1:
+                expected_next_start = (idx + 1) * act_target_sec
+                gap_to_next = max(0.5, expected_next_start - current_time_sec)
+                gap_to_next = min(4.0, gap_to_next)
+
+                gap_mp3 = os.path.join(temp_dir, f".temp_gap_{idx:02d}.mp3")
+                subprocess.run([
+                    ffmpeg_bin, "-y",
+                    "-f", "lavfi", "-i", "anullsrc=r=44100:cl=stereo",
+                    "-t", f"{gap_to_next:.2f}",
+                    "-c:a", "libmp3lame", "-b:a", "192k",
+                    gap_mp3
+                ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+                if os.path.isfile(gap_mp3):
+                    clean_gap = os.path.abspath(gap_mp3).replace("\\", "/").replace("'", "'\\''")
+                    f.write(f"file '{clean_gap}'\n")
+                    current_time_sec += gap_to_next
 
     # Nối tất cả các Hồi thành 1 file MP3 xuyên suốt
     subprocess.run([
@@ -720,15 +765,17 @@ def build_continuous_narration_audio(ffmpeg_bin: str, acts: list, voice: str,
             os.remove(concat_list)
         except Exception:
             pass
-    if gap_mp3 and os.path.isfile(gap_mp3):
-        try:
-            os.remove(gap_mp3)
-        except Exception:
-            pass
     for fpath, _, _ in act_audio_files:
         if os.path.isfile(fpath):
             try:
                 os.remove(fpath)
+            except Exception:
+                pass
+    for idx in range(total_acts):
+        gap_f = os.path.join(temp_dir, f".temp_gap_{idx:02d}.mp3")
+        if os.path.isfile(gap_f):
+            try:
+                os.remove(gap_f)
             except Exception:
                 pass
 
@@ -739,15 +786,15 @@ def build_continuous_narration_audio(ffmpeg_bin: str, acts: list, voice: str,
 # BƯỚC 4: AUDIO DUCKING VÀ XUẤT VIDEO REVIEW HOÀN CHỈNH
 # -----------------------------------------------------------------------------
 def apply_audio_ducking(ffmpeg_bin: str, video_in: str, audio_voice: str, video_out: str,
-                        bgm_vol: float = 0.15, voice_vol: float = 1.25) -> bool:
+                        bgm_vol: float = 0.03, voice_vol: float = 1.35) -> bool:
     """
     Audio Ducking:
-    - [0:a] Nhạc nền gốc giảm còn bgm_vol (15%)
-    - [1:a] Giọng thuyết minh AI tăng voice_vol (125%)
+    - [0:a] Nhạc nền gốc giảm còn bgm_vol (3% theo yêu cầu)
+    - [1:a] Giọng thuyết minh AI tăng voice_vol (135%) to rõ, cuốn hút
     - amix: Trộn 2 luồng, thời lượng giữ theo video gốc
     - -c:v copy: Siêu tốc, không làm suy giảm chất lượng hình ảnh
     """
-    filter_complex = f"[0:a]volume={bgm_vol:.2f}[bgm];[1:a]volume={voice_vol:.2f}[voice];[bgm][voice]amix=inputs=2:duration=first[aout]"
+    filter_complex = f"[0:a]volume={bgm_vol:.2f}[bgm];[1:a]volume={voice_vol:.2f}[voice];[bgm][voice]amix=inputs=2:duration=first:dropout_transition=2[aout]"
     cmd = [
         ffmpeg_bin, "-y",
         "-i", video_in,
@@ -889,14 +936,15 @@ def process_channel_review(ffmpeg_bin: str, raw_merged_video: str, show_title: s
     full_audio_path = os.path.join(out_folder, f".temp_full_narration_{lang}.mp3")
     target_sec = duration_mins * 60.0
 
-    ok_audio, chapters = build_continuous_narration_audio(ffmpeg_bin, acts, voice, target_sec, full_audio_path, out_folder)
+    voice_rate = ai_cfg.get("voice_rate", "+12%")
+    ok_audio, chapters = build_continuous_narration_audio(ffmpeg_bin, acts, voice, target_sec, full_audio_path, out_folder, voice_rate=voice_rate)
     if not ok_audio or not os.path.isfile(full_audio_path):
         print(f"      [!] Lỗi khi tổng hợp dải âm thanh toàn diện.")
         return ""
 
-    # 3. Audio Ducking ghép vào video gốc
-    bgm_vol = ai_cfg.get("ducking_bgm_volume", 0.15)
-    voice_vol = ai_cfg.get("ducking_voice_volume", 1.25)
+    # 3. Audio Ducking ghép vào video gốc (tiếng gốc 3% cực nhỏ, giọng thuyết minh 135% to rõ)
+    bgm_vol = ai_cfg.get("ducking_bgm_volume", 0.03)
+    voice_vol = ai_cfg.get("ducking_voice_volume", 1.35)
     print(f"      🎬 Đang thực hiện Audio Ducking vào video ({duration_mins:.1f} phút)...")
     duck_ok = apply_audio_ducking(ffmpeg_bin, raw_merged_video, full_audio_path, out_video, bgm_vol, voice_vol)
 

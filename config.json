@@ -28,14 +28,14 @@
     ],
     "voice_vi": "vi-VN-NamMinhNeural",
     "voice_en": "en-US-ChristopherNeural",
-    "ducking_bgm_volume": 0.15,
-    "ducking_voice_volume": 1.25
+    "ducking_bgm_volume": 0.03,
+    "ducking_voice_volume": 1.35
   },
   "channels_distribution": {
     "kenh_1_raw": {
       "name": "Kenh_1_Phim_Goc_Full",
       "youtube": {
-        "enabled": false,
+        "enabled": true ,
         "token_file": "tokens/yt_kenh1_raw.json",
         "client_secrets_file": "client_secrets_k1.json",
         "privacy_status": "unlisted",
@@ -50,7 +50,7 @@
     "kenh_2_en": {
       "name": "Kenh_2_Review_Anime_EN",
       "youtube": {
-        "enabled": false,
+        "enabled": true ,
         "token_file": "tokens/yt_kenh2_en.json",
         "client_secrets_file": "client_secrets_k2.json",
         "privacy_status": "unlisted",
@@ -65,7 +65,7 @@
     "kenh_3_vi": {
       "name": "Kenh_3_Tom_Tat_Anime_VI",
       "youtube": {
-        "enabled": false,
+        "enabled": true ,
         "token_file": "tokens/yt_kenh3_vi.json",
         "client_secrets_file": "client_secrets_k3.json",
         "privacy_status": "unlisted",
