@@ -134,14 +134,14 @@ def extract_audio_for_analysis(ffmpeg_bin: str, video_path: str, out_audio_path:
         return False
 
 
-def call_gemini_api(api_key: str, prompt: str, model: str = "gemini-flash-latest",
+def call_gemini_api(api_key: str, prompt: str, model: str = "gemini-3.5-flash",
                     file_uri: str = None, file_mime_type: str = "audio/mp3",
-                    timeout: int = 120, max_retries: int = 4) -> str:
+                    timeout: int = 45, max_retries: int = 3) -> str:
     """Gọi trực tiếp Google Gemini REST API kèm cơ chế tự động thử lại (Retry and Backoff) và đổi model dự phòng."""
     if not api_key:
         raise ValueError("Chưa cấu hình GEMINI_API_KEY.")
 
-    raw_candidates = [model, "gemini-3.5-flash", "gemini-flash-latest", "gemini-flash-lite-latest"]
+    raw_candidates = [model, "gemini-3.5-flash", "gemini-flash-lite-latest"]
     candidate_models = []
     for m in raw_candidates:
         if m and m not in candidate_models:
