@@ -46,7 +46,8 @@ load_dotenv()
 
 def upload_video_to_facebook(video_path: str, metadata: dict,
                              page_id: str, access_token: str,
-                             published: bool = True) -> str:
+                             published: bool = True,
+                             thumbnail_path: str = None) -> str:
     """
     Tải video lên Facebook Fanpage qua Meta Graph API bằng giao thức Resumable Upload.
     Trả về facebook_video_id nếu thành công.
@@ -158,6 +159,26 @@ def upload_video_to_facebook(video_path: str, metadata: dict,
             fb_url = f"https://www.facebook.com/{video_id}"
             print(f"   🎉 [THÀNH CÔNG] Video đã đăng lên Facebook Fanpage!")
             print(f"   👉 Link video: {fb_url}")
+
+            # Cài đặt ảnh Thumbnail tùy chỉnh nếu có
+            if thumbnail_path and os.path.isfile(thumbnail_path):
+                try:
+                    print(f"   🖼️ Đang tải ảnh Thumbnail lên Facebook Fanpage...")
+                    thumb_endpoint = f"https://graph.facebook.com/{GRAPH_API_VERSION}/{video_id}/thumbnails"
+                    with open(thumbnail_path, "rb") as tf:
+                        thumb_files = {"source": tf}
+                        thumb_data = {
+                            "access_token": access_token,
+                            "is_preferred": "true"
+                        }
+                        r_th = requests.post(thumb_endpoint, data=thumb_data, files=thumb_files, timeout=30)
+                        if r_th.status_code == 200:
+                            print(f"   [✓] Facebook: Cài đặt Thumbnail thành công!")
+                        else:
+                            print(f"   [!] Facebook Thumbnail warning ({r_th.status_code}): {r_th.text}")
+                except Exception as e_th:
+                    print(f"   [!] Lỗi cài đặt Facebook Thumbnail: {e_th}")
+
             return str(video_id)
         else:
             raise RuntimeError(f"Facebook finish thất bại: {finish_data}")
@@ -174,6 +195,7 @@ def main():
     parser.add_argument("--metadata", help="Đường dẫn file metadata (.json hoặc .txt)")
     parser.add_argument("--title", help="Tiêu đề video nếu không dùng file metadata")
     parser.add_argument("--description", help="Mô tả video nếu không dùng file metadata")
+    parser.add_argument("--thumbnail", help="Đường dẫn file ảnh Thumbnail tùy chỉnh (.jpg/.png)")
     parser.add_argument("--draft", action="store_true", help="Lưu dạng bản nháp không công khai ngay")
     args = parser.parse_args()
 
@@ -205,12 +227,14 @@ def main():
             print("[X] Chưa cung cấp --page-id hoặc --token (và chưa có trong .env)")
             sys.exit(1)
 
+        thumb_to_use = args.thumbnail or meta.get("thumbnail_path")
         vid = upload_video_to_facebook(
             video_path=args.video,
             metadata=meta,
             page_id=page_id,
             access_token=token,
-            published=not args.draft
+            published=not args.draft,
+            thumbnail_path=thumb_to_use
         )
         print(f"\n[V] Đã hoàn tất upload Facebook Video ID: {vid}")
     except Exception as e:

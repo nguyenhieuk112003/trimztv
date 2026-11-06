@@ -94,7 +94,8 @@ def upload_video_to_youtube(video_path: str, metadata: dict,
                             client_secrets_file: str = "client_secrets.json",
                             token_file: str = "token.json",
                             privacy_status: str = "unlisted",
-                            category_id: str = "1") -> str:
+                            category_id: str = "1",
+                            thumbnail_path: str = None) -> str:
     """
     Tải video lên YouTube kèm Tiêu đề, Mô tả, Tags tự động.
     Trả về YouTube Video ID nếu thành công.
@@ -181,6 +182,16 @@ def upload_video_to_youtube(video_path: str, metadata: dict,
         yt_url = f"https://youtu.be/{video_id}"
         print(f"   🎉 [THÀNH CÔNG] Video đã được đăng lên YouTube!")
         print(f"   👉 Link xem: {yt_url}")
+
+        if thumbnail_path and os.path.isfile(thumbnail_path):
+            try:
+                print(f"   🖼️ Đang tải ảnh Thumbnail lên YouTube...")
+                thumb_body = MediaFileUpload(thumbnail_path, mimetype="image/jpeg", resumable=True)
+                youtube.thumbnails().set(videoId=video_id, media_body=thumb_body).execute()
+                print(f"   [✓] YouTube: Cài đặt Thumbnail thành công!")
+            except Exception as e_th:
+                print(f"   [!] Lỗi cài đặt YouTube Thumbnail: {e_th}")
+
         return video_id
     else:
         raise RuntimeError(f"Upload hoàn tất nhưng không nhận được video ID: {response}")
@@ -195,6 +206,7 @@ def main():
     parser.add_argument("--category", default="1", help="ID chuyên mục (1: Film & Animation, 24: Entertainment)")
     parser.add_argument("--token", default="token.json", help="Đường dẫn file token đăng nhập YouTube (vd: tokens/yt_k1.json)")
     parser.add_argument("--secrets", default="client_secrets.json", help="Đường dẫn file client_secrets.json")
+    parser.add_argument("--thumbnail", help="Đường dẫn file ảnh Thumbnail tùy chỉnh (.jpg/.png)")
     parser.add_argument("--auth-only", action="store_true", help="Chỉ đăng nhập và lưu token cho kênh mà không tải video")
     args = parser.parse_args()
 
@@ -234,13 +246,15 @@ def main():
         meta = {"title": args.title, "description": "", "tags": []}
 
     try:
+        thumb_to_use = args.thumbnail or meta.get("thumbnail_path")
         vid = upload_video_to_youtube(
             video_path=args.video,
             metadata=meta,
             client_secrets_file=args.secrets,
             token_file=args.token,
             privacy_status=args.privacy,
-            category_id=args.category
+            category_id=args.category,
+            thumbnail_path=thumb_to_use
         )
         print(f"\n[V] Đã hoàn tất upload video ID: {vid}")
     except Exception as e:

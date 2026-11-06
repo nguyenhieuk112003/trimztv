@@ -406,6 +406,12 @@ def extract_show_episodes(show_url: str):
     clean_desc = html_lib.unescape(raw_desc)
     clean_desc = re.sub(r'Watch .*? on Trimz[ \t–—\-]*', '', clean_desc).strip()
 
+    # Lấy ảnh poster đại diện chính thức của phim từ web Trimz
+    poster_match = re.search(r'<meta property="og:image" content="([^"]+)"', html)
+    if not poster_match:
+        poster_match = re.search(r'<meta name="twitter:image" content="([^"]+)"', html)
+    poster_url = poster_match.group(1).strip() if poster_match else ''
+
     # Tìm các link MP4
     mp4_pattern = r'https://cdn\.trimz\.co/generated-videos/ms_videos/[a-zA-Z0-9_\-]+\.mp4'
     found_urls = re.findall(mp4_pattern, html)
@@ -422,7 +428,8 @@ def extract_show_episodes(show_url: str):
         "url": show_url,
         "title": safe_title,
         "description": clean_desc,
-        "episodes": unique_urls
+        "episodes": unique_urls,
+        "poster_url": poster_url
     }
 
 
@@ -454,7 +461,8 @@ def process_single_show(show_url: str, config: dict, history: dict, ffmpeg_bin: 
             json.dump({
                 "title": info["title"],
                 "description": info.get("description", ""),
-                "url": show_url
+                "url": show_url,
+                "poster_url": info.get("poster_url", "")
             }, f, indent=2, ensure_ascii=False)
     except Exception:
         pass
@@ -520,6 +528,7 @@ def process_single_show(show_url: str, config: dict, history: dict, ffmpeg_bin: 
                     "title": info["title"],
                     "description": info.get("description", ""),
                     "url": show_url,
+                    "poster_url": info.get("poster_url", ""),
                     "last_downloaded_episode": show_rec["last_downloaded_episode"],
                     "total_episodes": len(episodes),
                     "downloaded_episodes": show_rec["downloaded_episodes"],
@@ -579,12 +588,12 @@ def process_single_show(show_url: str, config: dict, history: dict, ffmpeg_bin: 
     # Tự động ghép các tập video đã tải thành các video tối đa X phút (mặc định 40 phút)
     merge_cfg = config.get("merge", {})
     if merge_cfg.get("enabled", True):
-        merge_show_episodes(show_dir, info["title"], config, ffmpeg_bin, show_desc=info.get("description", ""))
+        merge_show_episodes(show_dir, info["title"], config, ffmpeg_bin, show_desc=info.get("description", ""), poster_url=info.get("poster_url", ""))
 
     return new_downloaded
 
 
-def merge_show_episodes(show_dir: str, show_title: str, config: dict, ffmpeg_bin: str, show_desc: str = "") -> int:
+def merge_show_episodes(show_dir: str, show_title: str, config: dict, ffmpeg_bin: str, show_desc: str = "", poster_url: str = "") -> int:
     """
     Tự động ghép các tập video đã tải thành các video có thời lượng tối đa theo cấu hình (mặc định: 40 phút).
     - Tìm tất cả file Tap_XXX.mp4 trong show_dir.
@@ -592,13 +601,16 @@ def merge_show_episodes(show_dir: str, show_title: str, config: dict, ffmpeg_bin
     - Dùng FFmpeg ghép không làm giảm chất lượng (stream copy), có fallback re-encode nếu cần.
     - Lưu vào thư mục con (mặc định: Ghep_Video).
     """
-    if not show_desc:
+    if not show_desc or not poster_url:
         info_file = os.path.join(show_dir, "info.json")
         if os.path.isfile(info_file):
             try:
                 with open(info_file, "r", encoding="utf-8") as f:
                     idata = json.load(f)
-                    show_desc = idata.get("description", "")
+                    if not show_desc:
+                        show_desc = idata.get("description", "")
+                    if not poster_url:
+                        poster_url = idata.get("poster_url", "")
             except Exception:
                 pass
 
@@ -706,6 +718,7 @@ def merge_show_episodes(show_dir: str, show_title: str, config: dict, ffmpeg_bin
             if ai_cfg.get("enabled", True):
                 ai_cfg_copy = dict(ai_cfg)
                 ai_cfg_copy["full_config"] = config
+                ai_cfg_copy["poster_url"] = poster_url
                 try:
                     from ai_recap_helper import process_channel_review
                     for lang in ai_cfg.get("languages", ["vi", "en"]):

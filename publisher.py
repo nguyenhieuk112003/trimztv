@@ -78,6 +78,23 @@ def publish_to_channel(channel_key: str, video_path: str, metadata: dict, config
     dist_cfg = config.get("channels_distribution", {}).get(channel_key, {})
     channel_name = dist_cfg.get("name", channel_key.upper())
 
+    # Tìm kiếm ảnh Thumbnail tùy chỉnh nếu có
+    thumb_path = metadata.get("thumbnail_path")
+    if not thumb_path or not os.path.isfile(thumb_path):
+        v_dir = os.path.dirname(video_path)
+        v_base = os.path.splitext(os.path.basename(video_path))[0]
+        for candidate_name in [
+            f"{v_base}_thumbnail.jpg",
+            f"{v_base}_THUMBNAIL.jpg",
+            f"{v_base}_THUMBNAIL_VI.jpg",
+            f"{v_base}_THUMBNAIL_EN.jpg",
+            "thumbnail.jpg"
+        ]:
+            c_path = os.path.join(v_dir, candidate_name)
+            if os.path.isfile(c_path):
+                thumb_path = os.path.abspath(c_path)
+                break
+
     print(f"\n📡 [PHÂN PHỐI ĐA NỀN TẢNG] -> {channel_name}")
 
     # 1. ĐĂNG LÊN YOUTUBE NẾU BẬT
@@ -115,7 +132,8 @@ def publish_to_channel(channel_key: str, video_path: str, metadata: dict, config
                         client_secrets_file=secrets_full,
                         token_file=token_full,
                         privacy_status=privacy_status,
-                        category_id=category_id
+                        category_id=category_id,
+                        thumbnail_path=thumb_path
                     )
                     results["youtube_video_id"] = vid
                     results["youtube_url"] = f"https://youtu.be/{vid}"
@@ -156,7 +174,8 @@ def publish_to_channel(channel_key: str, video_path: str, metadata: dict, config
                         metadata=metadata,
                         page_id=page_id,
                         access_token=access_token,
-                        published=published
+                        published=published,
+                        thumbnail_path=thumb_path
                     )
                     results["facebook_video_id"] = fb_vid
                     results["facebook_url"] = f"https://www.facebook.com/{fb_vid}"
@@ -191,13 +210,19 @@ def publish_to_channel(channel_key: str, video_path: str, metadata: dict, config
             yt_ok = (results["youtube_video_id"] is not None) if yt_is_on else True
             fb_ok = (results["facebook_video_id"] is not None) if fb_is_on else True
 
-            if yt_ok and fb_ok and channel_key != "kenh_1_raw" and os.path.isfile(video_path):
-                try:
-                    sz_mb = os.path.getsize(video_path) / (1024 * 1024)
-                    os.remove(video_path)
-                    print(f"   🧹 [DỌN DẸP Ổ CỨNG] Đã đăng thành công cả YouTube & Facebook ({channel_name})! Tự động xóa {os.path.basename(video_path)} ({sz_mb:.1f} MB) để nhẹ máy.")
-                except Exception as e_del:
-                    print(f"   [!] Không thể xóa video {os.path.basename(video_path)}: {e_del}")
+            if yt_ok and fb_ok and channel_key != "kenh_1_raw":
+                if os.path.isfile(video_path):
+                    try:
+                        sz_mb = os.path.getsize(video_path) / (1024 * 1024)
+                        os.remove(video_path)
+                        print(f"   🧹 [DỌN DẸP Ổ CỨNG] Đã đăng thành công cả YouTube & Facebook ({channel_name})! Tự động xóa {os.path.basename(video_path)} ({sz_mb:.1f} MB) để nhẹ máy.")
+                    except Exception as e_del:
+                        print(f"   [!] Không thể xóa video {os.path.basename(video_path)}: {e_del}")
+                if thumb_path and os.path.isfile(thumb_path):
+                    try:
+                        os.remove(thumb_path)
+                    except Exception:
+                        pass
             elif not (yt_ok and fb_ok):
                 yt_status_str = "✓ Thành công" if yt_ok else "✗ Chưa xong"
                 fb_status_str = "✓ Thành công" if fb_ok else "✗ Chưa xong"

@@ -4,9 +4,10 @@
     "https://cdn.trimz.co/generated-videos/ms_videos/f3a72642-4a23-4d60-9ea5-6a420189ce69_ep_render_5948835d-e258-49d1-a463-f78f90d148b1_381d850b3e2f43dbaccc2c800de878c0.mp4",
     "https://cdn.trimz.co/generated-videos/ms_videos/f3a72642-4a23-4d60-9ea5-6a420189ce69_ep_render_316b7765-306d-40db-b603-67b936df26ba_c4b804e6dbce4f868b1eb3355dfd6e29.mp4",
     "https://cdn.trimz.co/generated-videos/ms_videos/f3a72642-4a23-4d60-9ea5-6a420189ce69_ep_render_84444ec6-5704-42d6-8499-91edf74e8823_f25cf1a5579f42339b9a2f2ba122c783.mp4",
-    "https://cdn.trimz.co/generated-videos/ms_videos/f3a72642-4a23-4d60-9ea5-6a420189ce69_ep_render_f9910df4-6857-492e-b6cf-9dc246d06f28_cf76d280e8dc4b60aa72a84fd78a2716.mp4"
+    "https://cdn.trimz.co/generated-videos/ms_videos/f3a72642-4a23-4d60-9ea5-6a420189ce69_ep_render_f9910df4-6857-492e-b6cf-9dc246d06f28_cf76d280e8dc4b60aa72a84fd78a2716.mp4",
+    "https://cdn.trimz.co/generated-videos/ms_videos/cd1e2806-c5d1-4e68-a562-b47d6c43f54c_ep_render_615eba89-ba82-4eef-ac4c-8525b8349dc3_1f426dd6f1334135bdacb2cc9fbf71d8.mp4"
   ],
-  "last_check": "2026-11-06T21:48:00.922933",
+  "last_check": "2026-11-06T22:19:45.326047",
   "shows": {
     "Black Grade": {
       "url": "https://trimz.tv/black-grade",
@@ -20,6 +21,15 @@
       ],
       "total_episodes_found": 5,
       "last_updated": "2026-10-30T19:31:05.690975"
+    },
+    "A Hopeless Romantic&#x27;s Diary [Official Original IP · Do Not Remix]": {
+      "url": "https://trimz.tv/a-hopeless-romantics-diary-official-original-ip",
+      "last_downloaded_episode": 1,
+      "downloaded_episodes": [
+        1
+      ],
+      "total_episodes_found": 8,
+      "last_updated": "2026-11-06 22:19:45"
     }
   }
 }

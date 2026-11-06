@@ -233,6 +233,39 @@ def get_audio_duration(ffmpeg_bin: str, file_path: str) -> float:
     return 0.0
 
 
+
+def get_vietnamese_anime_title(api_key: str, show_title: str, show_desc: str = "", model: str = "gemini-3.5-flash") -> str:
+    """
+    Dịch và đặt tên tiếng Việt cực kỳ lôi cuốn, chuẩn phong cách Review Anime cho khán giả Việt Nam.
+    Ví dụ:
+    - 'Black Grade' -> 'Khi Ma Vương Thượng Cổ Đi Học'
+    - 'A Hopeless Romantic\'s Diary' -> 'Nhật Ký Tình Đơn Phương Của Kẻ Si Tình'
+    - 'Exiled Rank-E Noble\'s Soul-Eating Katana' -> 'Thanh Kiếm Nuốt Linh Hồn Của Quý Tộc Bị Lưu Đày'
+    """
+    if not api_key:
+        return show_title
+
+    prompt = f"""Bạn là chuyên gia đặt tiêu đề Review Phim Anime hàng đầu trên YouTube Việt Nam.
+Hãy đặt 1 tên tiếng Việt cực kỳ cuốn hút, giật gân, chuẩn phong cách Anime Review cho bộ phim sau:
+- Tên gốc: {show_title}
+- Tóm tắt: {show_desc or 'Anime phiêu lưu, kịch tính, tình cảm, hấp dẫn.'}
+
+YÊU CẦU:
+1. Đặt 1 tên tiếng Việt ngắn gọn, hấp dẫn (từ 3 đến 7 từ).
+2. Mang phong cách Anime giật gân, siêu cuốn hút người xem (Ví dụ: Khi Ma Vương Thượng Cổ Đi Học, Đẳng Cấp Thợ Săn Tối Thượng, Tình Yêu Vượt Thời Gian,...).
+3. Chỉ trả về DUY NHẤT tên phim tiếng Việt, không kèm dấu ngoặc kép, không giải thích gì thêm."""
+
+    try:
+        res = call_gemini_api(api_key, prompt, model=model, timeout=20)
+        clean = res.strip().strip('"').strip("'").strip("«»“”").strip()
+        clean = re.sub(r'^(Tên phim|Tên tiếng Việt|Tiêu đề)[:\s\-]+', '', clean, flags=re.IGNORECASE).strip()
+        if clean and len(clean) >= 2:
+            return clean
+    except Exception as e:
+        print(f"      [!] Lỗi khi dịch tên phim tiếng Việt: {e}")
+
+    return show_title
+
 # -----------------------------------------------------------------------------
 # BƯỚC 1: SINH KỊCH BẢN REVIEW XUYÊN SUỐT TOÀN BỘ VIDEO (FULL LENGTH)
 # -----------------------------------------------------------------------------
@@ -257,6 +290,12 @@ def generate_full_storyline(api_key: str, show_title: str, show_desc: str,
 
     words_per_act = int(total_target_words / num_acts)
     print(f"      📝 Mục tiêu kịch bản xuyên suốt: {total_target_words} từ chia thành {num_acts} Hồi (mỗi hồi ~{words_per_act} từ)...")
+
+    vi_title = show_title
+    if language == "vi":
+        print(f"      🌐 Đang dịch tên phim sang tiếng Việt chuẩn Anime...")
+        vi_title = get_vietnamese_anime_title(api_key, show_title, show_desc, model)
+        print(f"      [✓] Tên phim tiếng Việt: \"{vi_title}\" (Gốc: \"{show_title}\")")
 
     # Tải file âm thanh lên Gemini File API nếu có
     file_info = None
@@ -288,7 +327,7 @@ def generate_full_storyline(api_key: str, show_title: str, show_desc: str,
 
                 prompt = f"""Bạn là một chuyên gia biên kịch video YouTube chuyên về "Tóm Tắt Anime / Review Phim" với hàng triệu view.
 {audio_notice}Thông tin bộ anime:
-- Tên phim: {show_title}
+- Tên phim tiếng Việt: {vi_title} (Tên gốc: {show_title})
 - Cốt truyện tham khảo: {show_desc or 'Anime lôi cuốn về tình cảm học đường, biến cố bất ngờ.'}
 - Phân đoạn: Tóm tắt từ Tập {start_ep} đến Tập {end_ep} (Video dài {duration_mins:.1f} phút).
 
@@ -355,6 +394,7 @@ RETURN ONLY VALID JSON:
             try:
                 parsed = json.loads(clean_json)
                 if parsed.get("acts"):
+                    parsed["vi_title"] = vi_title
                     return parsed
             except Exception:
                 pass
@@ -365,7 +405,7 @@ RETURN ONLY VALID JSON:
             audio_guide = "Hãy lắng nghe toàn bộ file âm thanh thật để nắm rõ cốt truyện, lời thoại và diễn biến của phim. Tuyệt đối không bịa đặt." if file_uri else ""
             outline_prompt = f"""Bạn là biên kịch anime recap YouTube chuyên nghiệp. {audio_guide}
 Hãy lập dàn ý {num_acts} Hồi bám sát 100% tình tiết thật cho bộ anime:
-Tên: {show_title}
+Tên tiếng Việt: {vi_title} (Tên gốc: {show_title})
 Cốt truyện tham khảo: {show_desc}
 Video dài: {duration_mins:.1f} phút (Tập {start_ep} đến {end_ep}).
 
@@ -406,9 +446,9 @@ RETURN VALID JSON:
             outline_data = json.loads(clean_gemini_json(raw_outline))
         except Exception:
             outline_data = {
-                "youtube_title": f"[Tóm Tắt Anime] {show_title} (Tập {start_ep}-{end_ep})",
-                "youtube_description": f"{show_title}\n#animerecap",
-                "youtube_tags": ["anime recap", show_title.lower()],
+                "youtube_title": f"[Review Anime] {vi_title} (Tập {start_ep}-{end_ep})",
+                "youtube_description": f"{vi_title}\n#animerecap",
+                "youtube_tags": ["anime recap", vi_title.lower(), show_title.lower()],
                 "acts_plan": [{"act_number": i, "title": f"Hồi {i}", "key_events": f"Diễn biến phần {i}"} for i in range(1, num_acts + 1)]
             }
 
@@ -451,10 +491,11 @@ Chỉ xuất ra đoạn văn bản thuyết minh thuần túy của Hồi này:
             prev_summary = f"Kết thúc hồi {act_num} với diễn biến: {act_title}"
 
         return {
-            "youtube_title": outline_data.get("youtube_title", f"[Review Anime] {show_title}"),
+            "youtube_title": outline_data.get("youtube_title", f"[Review Anime] {vi_title}"),
             "youtube_description": outline_data.get("youtube_description", ""),
             "youtube_tags": outline_data.get("youtube_tags", []),
-            "acts": acts_list
+            "acts": acts_list,
+            "vi_title": vi_title
         }
     finally:
         # Xóa file audio tạm trên Gemini File API để giữ sạch storage
@@ -747,9 +788,50 @@ def process_channel_review(ffmpeg_bin: str, raw_merged_video: str, show_title: s
     out_meta = os.path.join(out_folder, f"{clean_prefix}_SEO_{lang_upper}.txt")
     out_json = os.path.join(out_folder, f"{clean_prefix}_YOUTUBE_PAYLOAD_{lang_upper}.json")
 
-    # Nếu đã tạo rồi thì bỏ qua
+    # Nếu đã tạo rồi thì kiểm tra thumbnail & tiếp tục xuất bản
     if os.path.isfile(out_video) and os.path.getsize(out_video) > 102400:
         print(f"      [✓] Video Review {lang_upper} đã tồn tại: {os.path.basename(out_video)}")
+        thumb_file = os.path.join(out_folder, f"{clean_prefix}_THUMBNAIL_{lang_upper}.jpg")
+        if not os.path.isfile(thumb_file):
+            try:
+                from thumbnail_generator import generate_anime_thumbnail
+                vi_title_exist = show_title
+                if lang == "vi":
+                    api_key = ai_cfg.get("api_key", "").strip() or os.environ.get("GEMINI_API_KEY", "").strip()
+                    if api_key:
+                        vi_title_exist = get_vietnamese_anime_title(api_key, show_title, show_desc, ai_cfg.get("model", "gemini-3.5-flash"))
+                badge_ep = f"TẬP {start_ep:02d}-{end_ep:02d} | FULL HD" if start_ep != end_ep else f"TẬP {start_ep:02d} | FULL HD"
+                cat_badge = "REVIEW ANIME" if lang == "vi" else "ANIME RECAP"
+                generate_anime_thumbnail(
+                    ffmpeg_bin=ffmpeg_bin,
+                    video_path=out_video,
+                    title=vi_title_exist,
+                    badge_text=badge_ep,
+                    category_label=cat_badge,
+                    out_thumbnail_path=thumb_file,
+                    poster_url=ai_cfg.get("poster_url")
+                )
+                print(f"      [✓] Đã tạo bổ sung Thumbnail: {os.path.basename(thumb_file)}")
+            except Exception as e_th:
+                print(f"      [!] Lỗi tạo bổ sung Thumbnail: {e_th}")
+
+        if os.path.isfile(out_json):
+            try:
+                with open(out_json, "r", encoding="utf-8") as f_j:
+                    payload_data = json.load(f_j)
+                if os.path.isfile(thumb_file):
+                    payload_data["thumbnail_path"] = os.path.abspath(thumb_file)
+                    with open(out_json, "w", encoding="utf-8") as f_j:
+                        json.dump(payload_data, f_j, indent=2, ensure_ascii=False)
+                chan_key = "kenh_3_vi" if lang == "vi" else "kenh_2_en"
+                full_config = ai_cfg.get("full_config")
+                if not full_config:
+                    full_config = {"channels_distribution": {}, "youtube_upload": yt_cfg or {}}
+                from publisher import publish_to_channel
+                publish_to_channel(chan_key, out_video, payload_data, full_config, payload_json_path=out_json)
+            except Exception as e_pub:
+                print(f"      [!] Lỗi khi tự động phân phối ({chan_key}): {e_pub}")
+
         return out_video
 
     api_key = ai_cfg.get("api_key", "").strip() or os.environ.get("GEMINI_API_KEY", "").strip()
@@ -873,7 +955,33 @@ def process_channel_review(ffmpeg_bin: str, raw_merged_video: str, show_title: s
                 f.write(f"\n--- {a.get('title', 'Hồi')} ---\n")
                 f.write(a.get("narration", "") + "\n")
 
-        # 6. Ghi file JSON YouTube Payload chuẩn cho Uploader
+        # 6. Tự động tạo ảnh Thumbnail chất lượng cao 16:9 (1280x720) High CTR
+        thumb_file = os.path.join(out_folder, f"{clean_prefix}_THUMBNAIL_{lang_upper}.jpg")
+        thumb_path = None
+        try:
+            from thumbnail_generator import generate_anime_thumbnail
+            thumb_title = content.get("vi_title") if lang == "vi" else show_title
+            if not thumb_title:
+                thumb_title = show_title
+            badge_ep = f"TẬP {start_ep:02d}-{end_ep:02d} | FULL HD" if start_ep != end_ep else f"TẬP {start_ep:02d} | FULL HD"
+            cat_badge = "REVIEW ANIME" if lang == "vi" else "ANIME RECAP"
+            poster_url = ai_cfg.get("poster_url")
+
+            print(f"      🖼️ Đang tự động tạo Thumbnail 1280x720 bắt mắt: \"{thumb_title}\"...")
+            thumb_path = generate_anime_thumbnail(
+                ffmpeg_bin=ffmpeg_bin,
+                video_path=out_video,
+                title=thumb_title,
+                badge_text=badge_ep,
+                category_label=cat_badge,
+                out_thumbnail_path=thumb_file,
+                poster_url=poster_url
+            )
+            print(f"      [✓] Đã tạo Thumbnail chuẩn SEO: {os.path.basename(thumb_file)}")
+        except Exception as e_th:
+            print(f"      [!] Lỗi tạo Thumbnail: {e_th}")
+
+        # 7. Ghi file JSON YouTube & Facebook Payload chuẩn cho Uploader
         privacy_status = yt_cfg.get("privacy_status", "unlisted") if yt_cfg else "unlisted"
         category_id = yt_cfg.get("category_id", "1") if yt_cfg else "1"
         payload_data = {
@@ -882,7 +990,8 @@ def process_channel_review(ffmpeg_bin: str, raw_merged_video: str, show_title: s
             "description": full_description,
             "tags": tags,
             "privacy_status": privacy_status,
-            "category_id": category_id
+            "category_id": category_id,
+            "thumbnail_path": os.path.abspath(thumb_file) if (thumb_path and os.path.isfile(thumb_file)) else None
         }
         with open(out_json, "w", encoding="utf-8") as f:
             json.dump(payload_data, f, indent=2, ensure_ascii=False)
