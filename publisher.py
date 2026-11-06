@@ -120,7 +120,7 @@ def publish_to_channel(channel_key: str, video_path: str, metadata: dict, config
             if os.path.isfile(fallback_secrets):
                 secrets_full = fallback_secrets
 
-        if os.path.isfile(secrets_full) or os.path.isfile(token_full):
+        if os.path.isfile(token_full):
             max_retries = 3
             for attempt in range(1, max_retries + 1):
                 try:
@@ -148,7 +148,7 @@ def publish_to_channel(channel_key: str, video_path: str, metadata: dict, config
                     else:
                         print(f"   [X] Thất bại sau {max_retries} lần thử upload YouTube ({channel_name}): {e_yt}")
         else:
-            print(f"   [i] Bỏ qua YouTube ({channel_name}): Chưa có file secrets ({os.path.basename(secrets_full)}) hoặc token ({os.path.basename(token_full)}).")
+            print(f"   [i] Bỏ qua YouTube ({channel_name}): Chưa có file token ({os.path.basename(token_full)}). Vui lòng chạy Dang_Nhap_3_Kenh_YouTube.bat để đăng nhập 1 lần.")
 
     # 2. ĐĂNG LÊN FACEBOOK NẾU BẬT
     fb_cfg = dist_cfg.get("facebook", {})
