@@ -7,12 +7,18 @@ MULTI-CHANNEL & MULTI-PLATFORM PUBLISHER (YOUTUBE & FACEBOOK)
 - Kênh 1: Phim gốc (Raw Full 1080p)   -> YouTube Kênh 1 & Facebook Fanpage 1
 - Kênh 2: Review Anime tiếng Anh      -> YouTube Kênh 2 & Facebook Fanpage 2
 - Kênh 3: Tóm tắt Anime tiếng Việt    -> YouTube Kênh 3 & Facebook Fanpage 3
+Tích hợp:
+- Tự động thử lại (Retry & Backoff) khi gặp lỗi mạng/kết nối
+- Khôi phục trạng thái (Checkpointed state): nền tảng nào đã đăng xong thì bỏ qua,
+  chỉ đăng nốt nền tảng bị lỗi, tuyệt đối không đăng trùng
+- Quy tắc an toàn thép: chỉ xóa video khi TẤT CẢ các nền tảng được bật đều thành công 100%
 ================================================================================
 """
 
 import os
 import sys
 import json
+import time
 from datetime import datetime
 
 if hasattr(sys.stdout, "reconfigure"):
@@ -54,6 +60,21 @@ def publish_to_channel(channel_key: str, video_path: str, metadata: dict, config
         print(f"[!] Không tìm thấy file video để đăng: {video_path}")
         return results
 
+    # Khôi phục trạng thái xuất bản trước đó từ file payload (nếu đã có lần thử trước)
+    if payload_json_path and os.path.isfile(payload_json_path):
+        try:
+            with open(payload_json_path, "r", encoding="utf-8") as f_prev:
+                prev_data = json.load(f_prev)
+                prev_res = prev_data.get("distribution_results", {})
+                if prev_res.get("youtube_video_id"):
+                    results["youtube_video_id"] = prev_res["youtube_video_id"]
+                    results["youtube_url"] = prev_res.get("youtube_url")
+                if prev_res.get("facebook_video_id"):
+                    results["facebook_video_id"] = prev_res["facebook_video_id"]
+                    results["facebook_url"] = prev_res.get("facebook_url")
+        except Exception:
+            pass
+
     dist_cfg = config.get("channels_distribution", {}).get(channel_key, {})
     channel_name = dist_cfg.get("name", channel_key.upper())
 
@@ -61,13 +82,14 @@ def publish_to_channel(channel_key: str, video_path: str, metadata: dict, config
 
     # 1. ĐĂNG LÊN YOUTUBE NẾU BẬT
     yt_cfg = dist_cfg.get("youtube", {})
-    # Fallback kiểm tra cấu hình youtube_upload chung
     if not yt_cfg:
         legacy_yt = config.get("youtube_upload", {})
         if legacy_yt.get("enabled", False):
             yt_cfg = legacy_yt
 
-    if yt_cfg.get("enabled", False):
+    if results.get("youtube_video_id"):
+        print(f"   [✓] YouTube ({channel_name}): Đã đăng thành công trước đó (ID: {results['youtube_video_id']}), bỏ qua không đăng lại.")
+    elif yt_cfg.get("enabled", False):
         token_file = yt_cfg.get("token_file", f"tokens/yt_{channel_key}.json")
         secrets_file = yt_cfg.get("client_secrets_file", f"client_secrets_{channel_key}.json")
         privacy_status = yt_cfg.get("privacy_status", "unlisted")
@@ -76,36 +98,45 @@ def publish_to_channel(channel_key: str, video_path: str, metadata: dict, config
         secrets_full = os.path.join(BASE_DIR, secrets_file) if not os.path.isabs(secrets_file) else secrets_file
         token_full = os.path.join(BASE_DIR, token_file) if not os.path.isabs(token_file) else token_file
 
-        # Fallback dùng client_secrets.json nếu file riêng không tồn tại
         if not os.path.isfile(secrets_full):
             fallback_secrets = os.path.join(BASE_DIR, "client_secrets.json")
             if os.path.isfile(fallback_secrets):
                 secrets_full = fallback_secrets
 
         if os.path.isfile(secrets_full) or os.path.isfile(token_full):
-            try:
-                from youtube_uploader import upload_video_to_youtube
-                print(f"   🚀 Đang tải lên YouTube ({channel_name}) với token: {os.path.basename(token_full)}...")
-                vid = upload_video_to_youtube(
-                    video_path=video_path,
-                    metadata=metadata,
-                    client_secrets_file=secrets_full,
-                    token_file=token_full,
-                    privacy_status=privacy_status,
-                    category_id=category_id
-                )
-                results["youtube_video_id"] = vid
-                results["youtube_url"] = f"https://youtu.be/{vid}"
-                metadata["youtube_video_id"] = vid
-                metadata["youtube_url"] = results["youtube_url"]
-            except Exception as e_yt:
-                print(f"   [!] Lỗi khi upload YouTube ({channel_name}): {e_yt}")
+            max_retries = 3
+            for attempt in range(1, max_retries + 1):
+                try:
+                    from youtube_uploader import upload_video_to_youtube
+                    print(f"   🚀 Đang tải lên YouTube ({channel_name}) với token: {os.path.basename(token_full)} (lần {attempt}/{max_retries})...")
+                    vid = upload_video_to_youtube(
+                        video_path=video_path,
+                        metadata=metadata,
+                        client_secrets_file=secrets_full,
+                        token_file=token_full,
+                        privacy_status=privacy_status,
+                        category_id=category_id
+                    )
+                    results["youtube_video_id"] = vid
+                    results["youtube_url"] = f"https://youtu.be/{vid}"
+                    metadata["youtube_video_id"] = vid
+                    metadata["youtube_url"] = results["youtube_url"]
+                    break
+                except Exception as e_yt:
+                    if attempt < max_retries:
+                        wait_sec = 5 * attempt
+                        print(f"   [!] Lỗi khi upload YouTube ({channel_name}): {e_yt}. Tự động thử lại sau {wait_sec}s...")
+                        time.sleep(wait_sec)
+                    else:
+                        print(f"   [X] Thất bại sau {max_retries} lần thử upload YouTube ({channel_name}): {e_yt}")
         else:
             print(f"   [i] Bỏ qua YouTube ({channel_name}): Chưa có file secrets ({os.path.basename(secrets_full)}) hoặc token ({os.path.basename(token_full)}).")
 
     # 2. ĐĂNG LÊN FACEBOOK NẾU BẬT
     fb_cfg = dist_cfg.get("facebook", {})
-    if fb_cfg.get("enabled", False):
+    if results.get("facebook_video_id"):
+        print(f"   [✓] Facebook ({channel_name}): Đã đăng thành công trước đó (ID: {results['facebook_video_id']}), bỏ qua không đăng lại.")
+    elif fb_cfg.get("enabled", False):
         page_id = (fb_cfg.get("page_id", "").strip() or
                    os.environ.get(f"FB_PAGE_ID_{channel_key.upper()}", "").strip() or
                    os.environ.get("FB_PAGE_ID", "").strip())
@@ -115,26 +146,34 @@ def publish_to_channel(channel_key: str, video_path: str, metadata: dict, config
         published = fb_cfg.get("published", True)
 
         if page_id and access_token:
-            try:
-                from facebook_uploader import upload_video_to_facebook
-                print(f"   📘 Đang tải lên Facebook Fanpage ({channel_name}) - Page ID: {page_id}...")
-                fb_vid = upload_video_to_facebook(
-                    video_path=video_path,
-                    metadata=metadata,
-                    page_id=page_id,
-                    access_token=access_token,
-                    published=published
-                )
-                results["facebook_video_id"] = fb_vid
-                results["facebook_url"] = f"https://www.facebook.com/{fb_vid}"
-                metadata["facebook_video_id"] = fb_vid
-                metadata["facebook_url"] = results["facebook_url"]
-            except Exception as e_fb:
-                print(f"   [!] Lỗi khi upload Facebook ({channel_name}): {e_fb}")
+            max_retries = 3
+            for attempt in range(1, max_retries + 1):
+                try:
+                    from facebook_uploader import upload_video_to_facebook
+                    print(f"   📘 Đang tải lên Facebook Fanpage ({channel_name}) - Page ID: {page_id} (lần {attempt}/{max_retries})...")
+                    fb_vid = upload_video_to_facebook(
+                        video_path=video_path,
+                        metadata=metadata,
+                        page_id=page_id,
+                        access_token=access_token,
+                        published=published
+                    )
+                    results["facebook_video_id"] = fb_vid
+                    results["facebook_url"] = f"https://www.facebook.com/{fb_vid}"
+                    metadata["facebook_video_id"] = fb_vid
+                    metadata["facebook_url"] = results["facebook_url"]
+                    break
+                except Exception as e_fb:
+                    if attempt < max_retries:
+                        wait_sec = 5 * attempt
+                        print(f"   [!] Lỗi khi upload Facebook ({channel_name}): {e_fb}. Tự động thử lại sau {wait_sec}s...")
+                        time.sleep(wait_sec)
+                    else:
+                        print(f"   [X] Thất bại sau {max_retries} lần thử upload Facebook ({channel_name}): {e_fb}")
         else:
             print(f"   [i] Bỏ qua Facebook ({channel_name}): Chưa điền page_id hoặc access_token trong config.json.")
 
-    # Cập nhật kết quả vào file JSON payload nếu có
+    # Cập nhật kết quả vào file JSON payload nếu có để ghi nhớ trạng thái
     if payload_json_path:
         try:
             metadata["published_at"] = datetime.now().isoformat()
@@ -151,12 +190,18 @@ def publish_to_channel(channel_key: str, video_path: str, metadata: dict, config
         if yt_is_on or fb_is_on:
             yt_ok = (results["youtube_video_id"] is not None) if yt_is_on else True
             fb_ok = (results["facebook_video_id"] is not None) if fb_is_on else True
+
             if yt_ok and fb_ok and channel_key != "kenh_1_raw" and os.path.isfile(video_path):
                 try:
                     sz_mb = os.path.getsize(video_path) / (1024 * 1024)
                     os.remove(video_path)
-                    print(f"   🧹 [DỌN DẸP Ổ CỨNG] Đã đăng thành công ({channel_name})! Tự động xóa {os.path.basename(video_path)} ({sz_mb:.1f} MB) để nhẹ máy.")
+                    print(f"   🧹 [DỌN DẸP Ổ CỨNG] Đã đăng thành công cả YouTube & Facebook ({channel_name})! Tự động xóa {os.path.basename(video_path)} ({sz_mb:.1f} MB) để nhẹ máy.")
                 except Exception as e_del:
                     print(f"   [!] Không thể xóa video {os.path.basename(video_path)}: {e_del}")
+            elif not (yt_ok and fb_ok):
+                yt_status_str = "✓ Thành công" if yt_ok else "✗ Chưa xong"
+                fb_status_str = "✓ Thành công" if fb_ok else "✗ Chưa xong"
+                print(f"   🔒 [BẢO TỒN VIDEO] Chưa hoàn tất tất cả nền tảng bật (YouTube: {yt_status_str} | Facebook: {fb_status_str}).")
+                print(f"      -> Giữ nguyên file {os.path.basename(video_path)} trên ổ cứng để tự động thử lại ở chu kỳ tiếp theo!")
 
     return results
