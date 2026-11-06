@@ -21,6 +21,22 @@ if hasattr(sys.stdout, "reconfigure"):
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 
+def load_dotenv():
+    env_file = os.path.join(BASE_DIR, ".env")
+    if os.path.isfile(env_file):
+        try:
+            with open(env_file, "r", encoding="utf-8") as ef:
+                for line in ef:
+                    line = line.strip()
+                    if line and not line.startswith("#") and "=" in line:
+                        k, v = line.split("=", 1)
+                        os.environ.setdefault(k.strip(), v.strip().strip('"').strip("'"))
+        except Exception:
+            pass
+
+load_dotenv()
+
+
 def publish_to_channel(channel_key: str, video_path: str, metadata: dict, config: dict, payload_json_path: str = None) -> dict:
     """
     Tự động phân phối video vào đúng Kênh YouTube và Fanpage Facebook được cấu hình cho channel_key.
@@ -90,8 +106,12 @@ def publish_to_channel(channel_key: str, video_path: str, metadata: dict, config
     # 2. ĐĂNG LÊN FACEBOOK NẾU BẬT
     fb_cfg = dist_cfg.get("facebook", {})
     if fb_cfg.get("enabled", False):
-        page_id = fb_cfg.get("page_id", "").strip()
-        access_token = fb_cfg.get("access_token", "").strip()
+        page_id = (fb_cfg.get("page_id", "").strip() or
+                   os.environ.get(f"FB_PAGE_ID_{channel_key.upper()}", "").strip() or
+                   os.environ.get("FB_PAGE_ID", "").strip())
+        access_token = (fb_cfg.get("access_token", "").strip() or
+                        os.environ.get(f"FB_ACCESS_TOKEN_{channel_key.upper()}", "").strip() or
+                        os.environ.get("FB_ACCESS_TOKEN", "").strip())
         published = fb_cfg.get("published", True)
 
         if page_id and access_token:

@@ -73,7 +73,7 @@
         "category_id": "1"
       },
       "facebook": {
-        "enabled": false,
+        "enabled": true,
         "page_id": "",
         "access_token": ""
       }
