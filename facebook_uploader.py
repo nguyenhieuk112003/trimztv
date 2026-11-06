@@ -28,6 +28,22 @@ GRAPH_API_VERSION = "v19.0"
 CHUNK_SIZE = 4 * 1024 * 1024  # 4 MB / chunk
 
 
+def load_dotenv():
+    env_file = os.path.join(BASE_DIR, ".env")
+    if os.path.isfile(env_file):
+        try:
+            with open(env_file, "r", encoding="utf-8") as ef:
+                for line in ef:
+                    line = line.strip()
+                    if line and not line.startswith("#") and "=" in line:
+                        k, v = line.split("=", 1)
+                        os.environ.setdefault(k.strip(), v.strip().strip('"').strip("'"))
+        except Exception:
+            pass
+
+load_dotenv()
+
+
 def upload_video_to_facebook(video_path: str, metadata: dict,
                              page_id: str, access_token: str,
                              published: bool = True) -> str:
@@ -153,8 +169,8 @@ def upload_video_to_facebook(video_path: str, metadata: dict,
 def main():
     parser = argparse.ArgumentParser(description="Facebook Video Uploader tự động qua Meta Graph API")
     parser.add_argument("--video", required=True, help="Đường dẫn file video (.mp4)")
-    parser.add_argument("--page-id", required=True, help="ID của Facebook Fanpage")
-    parser.add_argument("--token", required=True, help="Page Access Token của Fanpage")
+    parser.add_argument("--page-id", help="ID của Facebook Fanpage (tự động lấy từ .env nếu bỏ trống)")
+    parser.add_argument("--token", help="Page Access Token của Fanpage (tự động lấy từ .env nếu bỏ trống)")
     parser.add_argument("--metadata", help="Đường dẫn file metadata (.json hoặc .txt)")
     parser.add_argument("--title", help="Tiêu đề video nếu không dùng file metadata")
     parser.add_argument("--description", help="Mô tả video nếu không dùng file metadata")
@@ -183,11 +199,17 @@ def main():
         }
 
     try:
+        page_id = args.page_id or os.environ.get("FB_PAGE_ID_KENH_3_VI") or os.environ.get("FB_PAGE_ID")
+        token = args.token or os.environ.get("FB_ACCESS_TOKEN_KENH_3_VI") or os.environ.get("FB_ACCESS_TOKEN")
+        if not page_id or not token:
+            print("[X] Chưa cung cấp --page-id hoặc --token (và chưa có trong .env)")
+            sys.exit(1)
+
         vid = upload_video_to_facebook(
             video_path=args.video,
             metadata=meta,
-            page_id=args.page_id,
-            access_token=args.token,
+            page_id=page_id,
+            access_token=token,
             published=not args.draft
         )
         print(f"\n[V] Đã hoàn tất upload Facebook Video ID: {vid}")
