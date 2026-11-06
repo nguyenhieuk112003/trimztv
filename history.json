@@ -5,9 +5,17 @@
     "https://cdn.trimz.co/generated-videos/ms_videos/f3a72642-4a23-4d60-9ea5-6a420189ce69_ep_render_316b7765-306d-40db-b603-67b936df26ba_c4b804e6dbce4f868b1eb3355dfd6e29.mp4",
     "https://cdn.trimz.co/generated-videos/ms_videos/f3a72642-4a23-4d60-9ea5-6a420189ce69_ep_render_84444ec6-5704-42d6-8499-91edf74e8823_f25cf1a5579f42339b9a2f2ba122c783.mp4",
     "https://cdn.trimz.co/generated-videos/ms_videos/f3a72642-4a23-4d60-9ea5-6a420189ce69_ep_render_f9910df4-6857-492e-b6cf-9dc246d06f28_cf76d280e8dc4b60aa72a84fd78a2716.mp4",
-    "https://cdn.trimz.co/generated-videos/ms_videos/cd1e2806-c5d1-4e68-a562-b47d6c43f54c_ep_render_615eba89-ba82-4eef-ac4c-8525b8349dc3_1f426dd6f1334135bdacb2cc9fbf71d8.mp4"
+    "https://cdn.trimz.co/generated-videos/ms_videos/cd1e2806-c5d1-4e68-a562-b47d6c43f54c_ep_render_615eba89-ba82-4eef-ac4c-8525b8349dc3_1f426dd6f1334135bdacb2cc9fbf71d8.mp4",
+    "https://cdn.trimz.co/generated-videos/ms_videos/16b574bb-f344-467a-8b34-6ba3e46f2476_ep_render_aae3fd11-20ef-40b3-a294-849fe42c8fed_86b02ef4c8b243878cfa31d1262cfdfe.mp4",
+    "https://cdn.trimz.co/generated-videos/ms_videos/16b574bb-f344-467a-8b34-6ba3e46f2476_ep_render_567c2ae7-e097-468b-bb66-52444aa7bec8_876f23e65ff547109c78668ca53b6a44.mp4",
+    "https://cdn.trimz.co/generated-videos/ms_videos/16b574bb-f344-467a-8b34-6ba3e46f2476_ep_render_c9639ce1-77a2-452f-a99b-b8e18f6b5f6f_98d391a0c43142978dfe80309e18c06e.mp4",
+    "https://cdn.trimz.co/generated-videos/ms_videos/16b574bb-f344-467a-8b34-6ba3e46f2476_ep_render_4973c4f3-054b-4369-a391-cb86146f973a_3daf2c7a63cf475ba22607ae5fcdc70e.mp4",
+    "https://cdn.trimz.co/generated-videos/ms_videos/16b574bb-f344-467a-8b34-6ba3e46f2476_ep_render_59767c4f-99a2-434a-9d7b-c8d9d49f7b3e_19951afa910a4ba9a2eafcad3b1ac6dd.mp4",
+    "https://cdn.trimz.co/generated-videos/ms_videos/16b574bb-f344-467a-8b34-6ba3e46f2476_ep_render_806bf5b2-21a1-45e8-b04e-3e9364e0f8eb_8ffe7d4adcd94ca69148f139e4254796.mp4",
+    "https://cdn.trimz.co/generated-videos/ms_videos/16b574bb-f344-467a-8b34-6ba3e46f2476_ep_render_2c6c5a10-f96f-4945-9e8a-bbda1265a7db_7bc7d1d56fc54b56baaeee0bb3edb46c.mp4",
+    "https://cdn.trimz.co/generated-videos/ms_videos/16b574bb-f344-467a-8b34-6ba3e46f2476_ep_render_3dd92021-8b36-4599-a919-f54a300b2211_7b2d61fde2d1437abe42375e1f35d443.mp4"
   ],
-  "last_check": "2026-11-06T22:19:45.326047",
+  "last_check": "2026-11-06T22:41:54.962905",
   "shows": {
     "Black Grade": {
       "url": "https://trimz.tv/black-grade",
@@ -30,6 +38,22 @@
       ],
       "total_episodes_found": 8,
       "last_updated": "2026-11-06 22:19:45"
+    },
+    "All Sales Are Final, Even For Demons": {
+      "url": "https://trimz.tv/all-sales-are-final-even-for-demons",
+      "last_downloaded_episode": 8,
+      "downloaded_episodes": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8
+      ],
+      "total_episodes_found": 8,
+      "last_updated": "2026-11-06 22:41:54"
     }
   }
 }
