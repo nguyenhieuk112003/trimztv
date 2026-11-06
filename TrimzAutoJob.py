@@ -754,6 +754,22 @@ def merge_show_episodes(show_dir: str, show_title: str, config: dict, ffmpeg_bin
                     "description": raw_desc,
                     "tags": ["anime", "full hd", "phim anime", safe_title.lower()]
                 }
+                k1_thumb = os.path.join(target_dir, f"{safe_title}_Part_{part_idx:02d}_RAW_THUMBNAIL.jpg")
+                if not os.path.isfile(k1_thumb):
+                    try:
+                        from thumbnail_generator import generate_anime_thumbnail
+                        generate_anime_thumbnail(
+                            ffmpeg_bin=ffmpeg_bin,
+                            video_path=final_video_path,
+                            title=show_title,
+                            badge_text=f"TẬP {p_start:02d}-{p_end:02d} | 1080P",
+                            category_label="FULL ANIME",
+                            out_thumbnail_path=k1_thumb,
+                            poster_url=poster_url
+                        )
+                    except Exception:
+                        pass
+                k1_meta["thumbnail_path"] = os.path.abspath(k1_thumb) if os.path.isfile(k1_thumb) else None
                 k1_payload = os.path.join(target_dir, f"{safe_title}_Part_{part_idx:02d}_RAW_PAYLOAD.json")
                 try:
                     from publisher import publish_to_channel
